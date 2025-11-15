@@ -1,0 +1,76 @@
+services:
+  coordinator:
+    build:
+      context: ./services/coordinator
+      dockerfile: Dockerfile
+    container_name: coordinator
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mount source code for hot-reload during development
+      - ./services/coordinator/app:/app/app
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - kv-cache-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build:
+      context: ./services/worker
+      dockerfile: Dockerfile
+    ports:
+      - "8002-8010:8002" # Support multiple workers
+    volumes:
+      # Mount source code for hot-reload during development
+      - ./services/worker/app:/app/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - COORDINATOR_URL=http://coordinator:8001
+    networks:
+      - kv-cache-network
+    depends_on:
+      coordinator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: gateway
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for hot-reload during development
+      - ./services/gateway/app:/app/app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - COORDINATOR_URL=http://coordinator:8001
+    networks:
+      - kv-cache-network
+    depends_on:
+      coordinator:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  kv-cache-network:
+    driver: bridge

@@ -1,0 +1,11 @@
+[project]
+name = "gateway"
+version = "0.1.0"
+description = "Gateway service for Distributed Inference KV Cache"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]>=0.121.2",
+    "httpx>=0.28.1",
+    "uvicorn[standard]>=0.38.0",
+]

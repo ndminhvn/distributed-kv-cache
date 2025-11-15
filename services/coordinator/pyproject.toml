@@ -1,0 +1,10 @@
+[project]
+name = "coordinator"
+version = "0.1.0"
+description = "Coordinator service for Distributed KV Cache"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi[standard]>=0.121.2",
+    "uvicorn[standard]>=0.38.0",
+]

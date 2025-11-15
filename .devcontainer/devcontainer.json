@@ -1,0 +1,70 @@
+{
+  "name": "Distributed KV Cache Dev",
+  // Use custom Dockerfile for minimal dev container
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  // Mount workspace and Docker socket for docker-compose
+  "mounts": [
+    "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
+  ],
+  // Forward ports for all services (when running via docker-compose)
+  "forwardPorts": [
+    8000,
+    8001,
+    8002
+  ],
+  "portsAttributes": {
+    "8000": {
+      "label": "Gateway",
+      "onAutoForward": "notify"
+    },
+    "8001": {
+      "label": "Coordinator",
+      "onAutoForward": "notify"
+    },
+    "8002": {
+      "label": "Worker",
+      "onAutoForward": "notify"
+    }
+  },
+  // VS Code customizations
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "ms-python.isort",
+        "ms-azuretools.vscode-docker",
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "streetsidesoftware.code-spell-checker",
+        "eamodio.gitlens",
+        "donjayamanne.githistory"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "editor.formatOnSave": true,
+        "[python]": {
+          "editor.defaultFormatter": "ms-python.black-formatter",
+          "editor.formatOnSave": true,
+          "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit"
+          }
+        },
+        "files.exclude": {
+          "**/__pycache__": true,
+          "**/*.pyc": true,
+          "**/.pytest_cache": true,
+          "**/.venv": true
+        }
+      }
+    }
+  },
+  // Post-create command to set up the environment
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  // User to run as
+  "remoteUser": "vscode"
+}
