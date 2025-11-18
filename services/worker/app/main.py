@@ -2,11 +2,14 @@ import os
 import socket
 import asyncio
 import httpx
+import logging
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from .lru_cache import LRUCache
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # configuration via env vars
 WORKER_ID = os.environ.get("WORKER_ID", socket.gethostname())
@@ -31,10 +34,9 @@ async def startup_event():
                 f"{COORDINATOR_ADDR}/register",
                 json={"worker_id": WORKER_ID, "address": address},
             )
-            app.logger = getattr(app, "logger", None)
-            print(f"[startup] Registered worker {WORKER_ID} -> {address}")
+            logger.info(f"[startup] Registered worker {WORKER_ID} -> {address}")
         except Exception as e:
-            print(f"[startup] Failed to register worker: {e}")
+            logger.error(f"[startup] Failed to register worker: {e}")
 
 
 # @app.on_event("shutdown")
@@ -46,9 +48,9 @@ async def shutdown_event():
                 f"{COORDINATOR_ADDR}/deregister",
                 json={"worker_id": WORKER_ID, "address": address},
             )
-            print(f"[shutdown] Deregistered worker {WORKER_ID}")
+            logger.info(f"[shutdown] Deregistered worker {WORKER_ID}")
         except Exception as e:
-            print(f"[shutdown] Failed to deregister worker: {e}")
+            logger.error(f"[shutdown] Failed to deregister worker: {e}")
 
 
 @asynccontextmanager
@@ -75,4 +77,4 @@ def get_value(key: str):
 @app.post("/put")
 def put_value(req: PutRequest):
     cache.put(req.key, req.value)
-    return {"message": "ok"}
+    return {"key": req.key, "worker_id": WORKER_ID}

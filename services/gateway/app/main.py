@@ -1,7 +1,11 @@
 import os
 import httpx
+import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Distributed KV Cache - Gateway")
 COORDINATOR_URL = os.environ.get("COORDINATOR_ADDR", "http://coordinator:8081")
@@ -42,7 +46,9 @@ async def put_value(req: PutRequest):
             raise HTTPException(status_code=500, detail="No route for key")
 
         worker_addr = route["address"]
-        print(f"Routing PUT {req.key} to {worker_addr}")
+
+        # To test distributed routing
+        logger.debug(f"Routing PUT {req.key} to {worker_addr}")
 
         resp = await client.post(
             f"{worker_addr}/put", json={"key": req.key, "value": req.value}, timeout=5.0
