@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Distributed KV Cache - Gateway")
-COORDINATOR_URL = os.environ.get("COORDINATOR_ADDR", "http://coordinator:8081")
+COORDINATOR_ADDR = os.environ.get("COORDINATOR_ADDR", "http://coordinator:8081")
 
 
 class PutRequest(BaseModel):
@@ -38,7 +38,7 @@ def health():
 @app.get("/get/{key}")
 async def get_value(key: str):
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{COORDINATOR_URL}/route/{key}", timeout=5.0)
+        r = await client.get(f"{COORDINATOR_ADDR}/route/{key}", timeout=5.0)
         route = r.json()
 
         if r.status_code != 200 or "address" not in route:
@@ -53,7 +53,7 @@ async def get_value(key: str):
 @app.post("/put")
 async def put_value(req: PutRequest):
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{COORDINATOR_URL}/route/{req.key}", timeout=5.0)
+        r = await client.get(f"{COORDINATOR_ADDR}/route/{req.key}", timeout=5.0)
         route = r.json()
 
         if r.status_code != 200 or "address" not in route:
@@ -75,7 +75,7 @@ async def get_kv(req: KVGetRequest):
     """Retrieve KV cache entry. Routes by seq_id to the worker storing this sequence."""
     async with httpx.AsyncClient() as client:
         # Route by seq_id
-        r = await client.get(f"{COORDINATOR_URL}/kv/route/{req.seq_id}", timeout=5.0)
+        r = await client.get(f"{COORDINATOR_ADDR}/kv/route/{req.seq_id}", timeout=5.0)
         route = r.json()
 
         if r.status_code != 200 or "address" not in route:
@@ -103,7 +103,7 @@ async def put_kv(req: KVPutRequest):
     """Store KV cache entry. Routes by seq_id to ensure all entries for a sequence go to same worker."""
     async with httpx.AsyncClient() as client:
         # Route by seq_id
-        r = await client.get(f"{COORDINATOR_URL}/kv/route/{req.seq_id}", timeout=5.0)
+        r = await client.get(f"{COORDINATOR_ADDR}/kv/route/{req.seq_id}", timeout=5.0)
         route = r.json()
 
         if r.status_code != 200 or "address" not in route:
