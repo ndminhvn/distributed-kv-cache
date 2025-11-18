@@ -56,3 +56,17 @@ def route_key(key: str):
         return {"error": "No workers available"}
 
     return {"worker_id": worker_id, "address": workers[worker_id]["address"]}
+
+
+@app.get("/kv/route/{seq_id}")
+def route_kv(seq_id: str):
+    """Route KV cache requests by seq_id to ensure all entries for a sequence go to the same worker."""
+    worker_id = ring.get_node(seq_id)
+    if worker_id is None:
+        return {"error": "No workers available"}
+
+    return {
+        "worker_id": worker_id,
+        "address": workers[worker_id]["address"],
+        "seq_id": seq_id,
+    }

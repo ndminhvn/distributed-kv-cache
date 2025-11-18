@@ -3,10 +3,11 @@ import socket
 import asyncio
 import httpx
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from .lru_cache import LRUCache
+from .kv_cache import KVCache
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,11 +18,26 @@ WORKER_PORT = int(os.environ.get("WORKER_PORT", "8082"))
 COORDINATOR_ADDR = os.environ.get("COORDINATOR_ADDR", "http://coordinator:8081")
 
 cache = LRUCache(capacity=int(os.environ.get("LRU_CAPACITY", "1000")))
+kv_cache = KVCache(max_entries=int(os.environ.get("KV_MAX_ENTRIES", "50000")))
 
 
 class PutRequest(BaseModel):
     key: str
     value: str
+
+
+class KVPutRequest(BaseModel):
+    seq_id: str
+    layer: int
+    step: int
+    k: list
+    v: list
+
+
+class KVGetRequest(BaseModel):
+    seq_id: str
+    layer: int
+    step: int
 
 
 # @app.on_event("startup")
@@ -78,3 +94,42 @@ def get_value(key: str):
 def put_value(req: PutRequest):
     cache.put(req.key, req.value)
     return {"key": req.key, "worker_id": WORKER_ID}
+
+
+@app.post("/kv/get")
+async def get_kv(req: KVGetRequest):
+    out = kv_cache.get(req.seq_id, req.layer, req.step)
+    if out is None:
+        raise HTTPException(status_code=404, detail="KV entry not found")
+    return {
+        "seq_id": req.seq_id,
+        "layer": req.layer,
+        "step": req.step,
+        "k": out["k"],
+        "v": out["v"],
+        "worker_id": WORKER_ID,
+    }
+
+
+@app.post("/kv/put")
+async def put_kv(req: KVPutRequest):
+    kv_cache.put(req.seq_id, req.layer, req.step, req.k, req.v)
+    return {
+        "status": "ok",
+        "seq_id": req.seq_id,
+        "layer": req.layer,
+        "step": req.step,
+        "tensor_shapes": {"k": len(req.k), "v": len(req.v)},
+        "worker_id": WORKER_ID,
+    }
+
+
+@app.delete("/kv/{seq_id}")
+async def evict_seq(seq_id: str):
+    kv_cache.evict_sequence(seq_id)
+    return {"status": "evicted", "seq_id": seq_id, "worker_id": WORKER_ID}
+
+
+@app.get("/kv/stats")
+async def stats():
+    return kv_cache.stats()
