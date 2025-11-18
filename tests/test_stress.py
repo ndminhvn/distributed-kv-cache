@@ -19,15 +19,12 @@ from test_utils import (
     clear_tracked_sequences,
     GATEWAY_URL,
 )
+from tensor_utils import generate_fake_kv_tensor, serialize_tensor
 
-
-K_DIM = 64
-V_DIM = 64
-
-
-def generate_fake_tensor(dim: int) -> List[float]:
-    """Generate a fake tensor as a list of floats."""
-    return [random.random() for _ in range(dim)]
+# Standard transformer KV cache dimensions
+BATCH_SIZE = 1
+NUM_HEADS = 8
+HEAD_DIM = 64
 
 
 @pytest.mark.asyncio
@@ -53,14 +50,17 @@ async def test_concurrent_writes():
         layer = idx % NUM_LAYERS
         step = idx // NUM_LAYERS
 
+        k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+        v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+
         await client.post(
             f"{GATEWAY_URL}/kv/put",
             json={
                 "seq_id": seq_id,
                 "layer": layer,
                 "step": step,
-                "k": generate_fake_tensor(K_DIM),
-                "v": generate_fake_tensor(V_DIM),
+                "k": serialize_tensor(k_tensor),
+                "v": serialize_tensor(v_tensor),
             },
             timeout=30.0,
         )
@@ -69,14 +69,26 @@ async def test_concurrent_writes():
     async with httpx.AsyncClient() as client:
         # Execute all writes concurrently
         tasks = [write_kv_entry(client, i) for i in range(NUM_CONCURRENT)]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
     elapsed = time.time() - start_time
 
+    # Check for failures
+    failures = sum(1 for r in results if isinstance(r, Exception))
+    successes = NUM_CONCURRENT - failures
+
     print(f"\nCompleted {NUM_CONCURRENT} concurrent writes")
+    print(f"   Successful: {successes} ({successes/NUM_CONCURRENT*100:.1f}%)")
+    print(f"   Failed: {failures} ({failures/NUM_CONCURRENT*100:.1f}%)")
     print(f"   Time: {elapsed:.2f}s")
-    print(f"   Throughput: {NUM_CONCURRENT / elapsed:.2f} writes/sec")
+    print(f"   Throughput: {successes / elapsed:.2f} writes/sec")
     print(f"   Avg latency: {(elapsed / NUM_CONCURRENT) * 1000:.2f}ms per write")
+
+    # Assert that at least 95% of requests succeeded
+    success_rate = successes / NUM_CONCURRENT
+    assert (
+        success_rate >= 0.95
+    ), f"Too many failures: {failures}/{NUM_CONCURRENT} failed ({success_rate*100:.1f}% success rate)"
 
 
 @pytest.mark.asyncio
@@ -104,6 +116,12 @@ async def test_mixed_read_write_load():
             track_sequence(seq_id)
             for layer in range(NUM_LAYERS):
                 for step in range(NUM_STEPS):
+                    k_tensor = generate_fake_kv_tensor(
+                        BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM
+                    )
+                    v_tensor = generate_fake_kv_tensor(
+                        BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM
+                    )
                     populate_tasks.append(
                         client.post(
                             f"{GATEWAY_URL}/kv/put",
@@ -111,8 +129,8 @@ async def test_mixed_read_write_load():
                                 "seq_id": seq_id,
                                 "layer": layer,
                                 "step": step,
-                                "k": generate_fake_tensor(K_DIM),
-                                "v": generate_fake_tensor(V_DIM),
+                                "k": serialize_tensor(k_tensor),
+                                "v": serialize_tensor(v_tensor),
                             },
                             timeout=30.0,
                         )
@@ -160,14 +178,16 @@ async def test_mixed_read_write_load():
                 pass
         else:
             # Write operation
+            k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+            v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
             await client.post(
                 f"{GATEWAY_URL}/kv/put",
                 json={
                     "seq_id": seq_id,
                     "layer": layer,
                     "step": step,
-                    "k": generate_fake_tensor(K_DIM),
-                    "v": generate_fake_tensor(V_DIM),
+                    "k": serialize_tensor(k_tensor),
+                    "v": serialize_tensor(v_tensor),
                 },
                 timeout=30.0,
             )
@@ -182,12 +202,24 @@ async def test_mixed_read_write_load():
 
     elapsed = time.time() - start_time
 
+    # Check for failures
+    failures = sum(1 for r in results if isinstance(r, Exception))
+    successes = read_count + write_count
+
     print(f"\nMixed Workload Results:")
     print(f"   Total operations: {NUM_OPERATIONS}")
+    print(f"   Successful: {successes} ({successes/NUM_OPERATIONS*100:.1f}%)")
+    print(f"   Failed: {failures} ({failures/NUM_OPERATIONS*100:.1f}%)")
     print(f"   Reads: {read_count} ({read_count/NUM_OPERATIONS*100:.1f}%)")
     print(f"   Writes: {write_count} ({write_count/NUM_OPERATIONS*100:.1f}%)")
     print(f"   Time: {elapsed:.2f}s")
-    print(f"   Throughput: {NUM_OPERATIONS / elapsed:.2f} ops/sec")
+    print(f"   Throughput: {successes / elapsed:.2f} ops/sec")
+
+    # Assert that at least 95% of requests succeeded
+    success_rate = successes / NUM_OPERATIONS
+    assert (
+        success_rate >= 0.95
+    ), f"Too many failures: {failures}/{NUM_OPERATIONS} failed ({success_rate*100:.1f}% success rate)"
 
 
 @pytest.mark.asyncio
@@ -208,14 +240,17 @@ async def test_worker_distribution_under_load():
         seq_id = f"dist_seq_{seq_num:04d}"
         track_sequence(seq_id)
 
+        k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+        v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+
         response = await client.post(
             f"{GATEWAY_URL}/kv/put",
             json={
                 "seq_id": seq_id,
                 "layer": 0,
                 "step": 0,
-                "k": generate_fake_tensor(K_DIM),
-                "v": generate_fake_tensor(V_DIM),
+                "k": serialize_tensor(k_tensor),
+                "v": serialize_tensor(v_tensor),
             },
             timeout=30.0,
         )
@@ -227,13 +262,24 @@ async def test_worker_distribution_under_load():
 
     async with httpx.AsyncClient() as client:
         tasks = [get_worker_for_sequence(client, i) for i in range(NUM_SEQUENCES)]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
     elapsed = time.time() - start_time
 
+    # Check for failures
+    failures = sum(1 for r in results if isinstance(r, Exception))
+    successes = NUM_SEQUENCES - failures
+
+    assert successes > 0, f"All {NUM_SEQUENCES} requests failed!"
+    assert (
+        successes / NUM_SEQUENCES >= 0.95
+    ), f"Too many failures: {failures}/{NUM_SEQUENCES} failed"
+
     # Analyze distribution
-    for seq_id, worker_id in results:
-        sequence_to_worker[seq_id] = worker_id
+    for result in results:
+        if not isinstance(result, Exception):
+            seq_id, worker_id = result
+            sequence_to_worker[seq_id] = worker_id
 
     worker_counts = defaultdict(int)
     for worker_id in sequence_to_worker.values():
@@ -262,17 +308,20 @@ async def test_worker_distribution_under_load():
 
 @pytest.mark.asyncio
 async def test_high_throughput_burst():
-    """Test system behavior under high-throughput burst traffic."""
+    """Test system behavior under high-throughput burst traffic with batching."""
     print("\n" + "=" * 60)
     print("STRESS TEST 4: High-Throughput Burst")
     print("=" * 60)
 
-    BURST_SIZE = 2000
+    TOTAL_REQUESTS = 2000
     NUM_UNIQUE_SEQUENCES = 100
+    BATCH_SIZE_CONCURRENT = 200  # Send 200 requests at a time
+    BATCH_DELAY = 0.1  # Small delay between batches (seconds)
 
     print(
-        f"Sending burst of {BURST_SIZE} requests across {NUM_UNIQUE_SEQUENCES} sequences..."
+        f"Sending {TOTAL_REQUESTS} requests across {NUM_UNIQUE_SEQUENCES} sequences..."
     )
+    print(f"Batching: {BATCH_SIZE_CONCURRENT} concurrent requests per batch")
 
     async def burst_request(client, idx):
         """Send a single burst request."""
@@ -281,40 +330,72 @@ async def test_high_throughput_burst():
         layer = random.randint(0, 23)  # 24 layers
         step = random.randint(0, 19)  # 20 steps
 
+        k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+        v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+
         await client.post(
             f"{GATEWAY_URL}/kv/put",
             json={
                 "seq_id": seq_id,
                 "layer": layer,
                 "step": step,
-                "k": generate_fake_tensor(K_DIM),
-                "v": generate_fake_tensor(V_DIM),
+                "k": serialize_tensor(k_tensor),
+                "v": serialize_tensor(v_tensor),
             },
             timeout=30.0,
         )
 
     start_time = time.time()
+    all_results = []
 
     async with httpx.AsyncClient() as client:
-        tasks = [burst_request(client, i) for i in range(BURST_SIZE)]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Process requests in batches
+        for batch_start in range(0, TOTAL_REQUESTS, BATCH_SIZE_CONCURRENT):
+            batch_end = min(batch_start + BATCH_SIZE_CONCURRENT, TOTAL_REQUESTS)
+            batch_size = batch_end - batch_start
+
+            print(
+                f"Processing batch: {batch_start}-{batch_end} ({batch_size} requests)..."
+            )
+
+            tasks = [burst_request(client, i) for i in range(batch_start, batch_end)]
+            batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+            all_results.extend(batch_results)
+
+            # Small delay between batches to avoid overwhelming the system
+            if batch_end < TOTAL_REQUESTS:
+                await asyncio.sleep(BATCH_DELAY)
 
     elapsed = time.time() - start_time
 
     # Check for failures
-    failures = sum(1 for r in results if isinstance(r, Exception))
-    successes = BURST_SIZE - failures
+    failures = sum(1 for r in all_results if isinstance(r, Exception))
+    successes = TOTAL_REQUESTS - failures
 
     print(f"\nBurst Test Results:")
-    print(f"   Total requests: {BURST_SIZE}")
-    print(f"   Successful: {successes} ({successes/BURST_SIZE*100:.1f}%)")
-    print(f"   Failed: {failures} ({failures/BURST_SIZE*100:.1f}%)")
+    print(f"   Total requests: {TOTAL_REQUESTS}")
+    print(f"   Successful: {successes} ({successes/TOTAL_REQUESTS*100:.1f}%)")
+    print(f"   Failed: {failures} ({failures/TOTAL_REQUESTS*100:.1f}%)")
     print(f"   Time: {elapsed:.2f}s")
-    print(f"   Throughput: {successes / elapsed:.2f} ops/sec")
-    print(f"   Avg latency: {(elapsed / BURST_SIZE) * 1000:.2f}ms")
+    print(
+        f"   Throughput: {successes / elapsed:.2f} ops/sec"
+        if successes > 0
+        else "   Throughput: 0.00 ops/sec"
+    )
+    print(f"   Avg latency: {(elapsed / TOTAL_REQUESTS) * 1000:.2f}ms")
 
     if failures > 0:
         print(f"\nWarning: {failures} requests failed")
+        # Print first few exceptions for debugging
+        sample_exceptions = [r for r in all_results if isinstance(r, Exception)][:3]
+        for i, exc in enumerate(sample_exceptions, 1):
+            print(f"   Sample error {i}: {type(exc).__name__}: {exc}")
+
+    # Assert that at least 95% of requests succeeded
+    success_rate = successes / TOTAL_REQUESTS
+    assert (
+        success_rate >= 0.95
+    ), f"Too many failures: {failures}/{TOTAL_REQUESTS} failed ({success_rate*100:.1f}% success rate)"
 
 
 @pytest.mark.asyncio

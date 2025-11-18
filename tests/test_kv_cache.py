@@ -6,9 +6,9 @@ Simulates LLM inference workload with multiple sequences, layers, and steps.
 
 import httpx
 import asyncio
-import random
 import time
 import pytest
+import torch
 from typing import List, Dict
 
 from test_utils import (
@@ -18,18 +18,17 @@ from test_utils import (
     clear_tracked_sequences,
     GATEWAY_URL,
 )
+from tensor_utils import serialize_tensor, deserialize_tensor, generate_fake_kv_tensor
 
 
 NUM_SEQUENCES = 5
 NUM_LAYERS = 12  # Typical transformer model (e.g., GPT-2 small has 12 layers)
 NUM_STEPS = 10  # Number of generation steps per sequence
-K_DIM = 64  # Simplified K tensor dimension
-V_DIM = 64  # Simplified V tensor dimension
 
-
-def generate_fake_tensor(dim: int) -> List[float]:
-    """Generate a fake tensor as a list of floats."""
-    return [random.random() for _ in range(dim)]
+# Realistic transformer KV cache dimensions
+BATCH_SIZE = 1
+NUM_HEADS = 8
+HEAD_DIM = 64
 
 
 @pytest.mark.asyncio
@@ -44,22 +43,28 @@ async def test_kv_put_get():
         track_sequence(seq_id)
         layer = 0
         step = 0
-        k_tensor = generate_fake_tensor(K_DIM)
-        v_tensor = generate_fake_tensor(V_DIM)
+
+        # Generate PyTorch tensors in standard format: [batch, num_heads, seq_len, head_dim]
+        k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+        v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
 
         # Put KV
         print(f"\nPutting KV for seq={seq_id}, layer={layer}, step={step}")
+        print(f"   K tensor shape: {k_tensor.shape}, dtype: {k_tensor.dtype}")
+        print(f"   V tensor shape: {v_tensor.shape}, dtype: {v_tensor.dtype}")
+
         put_resp = await client.post(
             f"{GATEWAY_URL}/kv/put",
             json={
                 "seq_id": seq_id,
                 "layer": layer,
                 "step": step,
-                "k": k_tensor,
-                "v": v_tensor,
+                "k": serialize_tensor(k_tensor),
+                "v": serialize_tensor(v_tensor),
             },
         )
-        print(f"PUT Response: {put_resp.json()}")
+        put_result = put_resp.json()
+        print(f"PUT Response: {put_result}")
 
         # Get KV
         print(f"\nGetting KV for seq={seq_id}, layer={layer}, step={step}")
@@ -72,14 +77,18 @@ async def test_kv_put_get():
             },
         )
         result = get_resp.json()
+
+        # Deserialize retrieved tensors
+        retrieved_k = deserialize_tensor(result["k"])
+        retrieved_v = deserialize_tensor(result["v"])
+
         print(f"GET Response (worker={result.get('worker_id')})")
-        print(
-            f"   K tensor length: {len(result['k'])}, V tensor length: {len(result['v'])}"
-        )
+        print(f"   Retrieved K shape: {retrieved_k.shape}, dtype: {retrieved_k.dtype}")
+        print(f"   Retrieved V shape: {retrieved_v.shape}, dtype: {retrieved_v.dtype}")
 
         # Verify data integrity
-        assert result["k"] == k_tensor, "K tensor mismatch!"
-        assert result["v"] == v_tensor, "V tensor mismatch!"
+        assert torch.allclose(retrieved_k, k_tensor), "K tensor mismatch!"
+        assert torch.allclose(retrieved_v, v_tensor), "V tensor mismatch!"
         print("Data integrity verified!")
 
         # Don't cleanup here - let final cleanup handle it
@@ -100,15 +109,18 @@ async def test_sequence_distribution():
             seq_id = f"seq_{seq_num:03d}"
             track_sequence(seq_id)
 
-            # Put KV for first layer, first step
+            # Put KV for first layer, first step with PyTorch tensors
+            k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+            v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+
             put_resp = await client.post(
                 f"{GATEWAY_URL}/kv/put",
                 json={
                     "seq_id": seq_id,
                     "layer": 0,
                     "step": 0,
-                    "k": generate_fake_tensor(K_DIM),
-                    "v": generate_fake_tensor(V_DIM),
+                    "k": serialize_tensor(k_tensor),
+                    "v": serialize_tensor(v_tensor),
                 },
             )
 
@@ -156,21 +168,30 @@ async def test_full_inference_simulation():
             # Simulate generation: for each step, write KV for all layers
             for step in range(NUM_STEPS):
                 for layer in range(NUM_LAYERS):
-                    # Put KV
+                    # Put KV with PyTorch tensors
+                    k_tensor = generate_fake_kv_tensor(
+                        BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM
+                    )
+                    v_tensor = generate_fake_kv_tensor(
+                        BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM
+                    )
+
                     await client.post(
                         f"{GATEWAY_URL}/kv/put",
                         json={
                             "seq_id": seq_id,
                             "layer": layer,
                             "step": step,
-                            "k": generate_fake_tensor(K_DIM),
-                            "v": generate_fake_tensor(V_DIM),
+                            "k": serialize_tensor(k_tensor),
+                            "v": serialize_tensor(v_tensor),
                         },
                     )
                     total_puts += 1
 
                 # Simulate retrieval (e.g., for attention computation)
                 # Get KV from a random layer
+                import random
+
                 random_layer = random.randint(0, NUM_LAYERS - 1)
                 await client.post(
                     f"{GATEWAY_URL}/kv/get",
@@ -213,14 +234,18 @@ async def test_sequence_locality():
         # Put entries for multiple layers and steps
         for layer in range(3):
             for step in range(3):
+                # Put KV with PyTorch tensors
+                k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+                v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+
                 put_resp = await client.post(
                     f"{GATEWAY_URL}/kv/put",
                     json={
                         "seq_id": seq_id,
                         "layer": layer,
                         "step": step,
-                        "k": generate_fake_tensor(K_DIM),
-                        "v": generate_fake_tensor(V_DIM),
+                        "k": serialize_tensor(k_tensor),
+                        "v": serialize_tensor(v_tensor),
                     },
                 )
                 worker_id = put_resp.json()["worker_id"]
