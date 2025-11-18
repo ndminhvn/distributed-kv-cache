@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+import os
+import httpx
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI(title="Distributed KV Cache - Gateway")
+COORDINATOR_URL = os.environ.get("COORDINATOR_ADDR", "http://coordinator:8081")
 
 
 class PutRequest(BaseModel):
@@ -10,17 +13,38 @@ class PutRequest(BaseModel):
 
 
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "ok"}
-
-
-@app.post("/put")
-async def put_value(req: PutRequest):
-    # TODO: call coordinator for key assignment
-    return {"message": f"Received key={req.key}, value={req.value}"}
 
 
 @app.get("/get/{key}")
 async def get_value(key: str):
-    # TODO: call coordinator to find worker
-    return {"key": key, "value": None}
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{COORDINATOR_URL}/route/{key}", timeout=5.0)
+        route = r.json()
+
+        if r.status_code != 200 or "address" not in route:
+            raise HTTPException(status_code=500, detail="No route for key")
+
+        worker_addr = route["address"]
+
+        resp = await client.get(f"{worker_addr}/get/{key}", timeout=5.0)
+        return resp.json()
+
+
+@app.post("/put")
+async def put_value(req: PutRequest):
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{COORDINATOR_URL}/route/{req.key}", timeout=5.0)
+        route = r.json()
+
+        if r.status_code != 200 or "address" not in route:
+            raise HTTPException(status_code=500, detail="No route for key")
+
+        worker_addr = route["address"]
+        print(f"Routing PUT {req.key} to {worker_addr}")
+
+        resp = await client.post(
+            f"{worker_addr}/put", json={"key": req.key, "value": req.value}, timeout=5.0
+        )
+        return resp.json()
