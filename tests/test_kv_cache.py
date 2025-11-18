@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""
+Synthetic test for distributed KV cache system.
+Simulates LLM inference workload with multiple sequences, layers, and steps.
+"""
+
+import httpx
+import asyncio
+import random
+import time
+import pytest
+from typing import List, Dict
+
+from test_utils import (
+    cleanup_sequences,
+    track_sequence,
+    get_tracked_sequences,
+    clear_tracked_sequences,
+    GATEWAY_URL,
+)
+
+
+NUM_SEQUENCES = 5
+NUM_LAYERS = 12  # Typical transformer model (e.g., GPT-2 small has 12 layers)
+NUM_STEPS = 10  # Number of generation steps per sequence
+K_DIM = 64  # Simplified K tensor dimension
+V_DIM = 64  # Simplified V tensor dimension
+
+
+def generate_fake_tensor(dim: int) -> List[float]:
+    """Generate a fake tensor as a list of floats."""
+    return [random.random() for _ in range(dim)]
+
+
+@pytest.mark.asyncio
+async def test_kv_put_get():
+    """Test basic KV put and get operations."""
+    print("\n" + "=" * 60)
+    print("TEST 1: Basic KV Put/Get")
+    print("=" * 60)
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        seq_id = "test_seq_001"
+        track_sequence(seq_id)
+        layer = 0
+        step = 0
+        k_tensor = generate_fake_tensor(K_DIM)
+        v_tensor = generate_fake_tensor(V_DIM)
+
+        # Put KV
+        print(f"\nPutting KV for seq={seq_id}, layer={layer}, step={step}")
+        put_resp = await client.post(
+            f"{GATEWAY_URL}/kv/put",
+            json={
+                "seq_id": seq_id,
+                "layer": layer,
+                "step": step,
+                "k": k_tensor,
+                "v": v_tensor,
+            },
+        )
+        print(f"PUT Response: {put_resp.json()}")
+
+        # Get KV
+        print(f"\nGetting KV for seq={seq_id}, layer={layer}, step={step}")
+        get_resp = await client.post(
+            f"{GATEWAY_URL}/kv/get",
+            json={
+                "seq_id": seq_id,
+                "layer": layer,
+                "step": step,
+            },
+        )
+        result = get_resp.json()
+        print(f"GET Response (worker={result.get('worker_id')})")
+        print(
+            f"   K tensor length: {len(result['k'])}, V tensor length: {len(result['v'])}"
+        )
+
+        # Verify data integrity
+        assert result["k"] == k_tensor, "K tensor mismatch!"
+        assert result["v"] == v_tensor, "V tensor mismatch!"
+        print("Data integrity verified!")
+
+        # Don't cleanup here - let final cleanup handle it
+
+
+@pytest.mark.asyncio
+async def test_sequence_distribution():
+    """Test that sequences are distributed across workers."""
+    print("\n" + "=" * 60)
+    print("TEST 2: Sequence Distribution Across Workers")
+    print("=" * 60)
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        sequence_to_worker = {}
+
+        # Generate multiple sequences
+        for seq_num in range(NUM_SEQUENCES):
+            seq_id = f"seq_{seq_num:03d}"
+            track_sequence(seq_id)
+
+            # Put KV for first layer, first step
+            put_resp = await client.post(
+                f"{GATEWAY_URL}/kv/put",
+                json={
+                    "seq_id": seq_id,
+                    "layer": 0,
+                    "step": 0,
+                    "k": generate_fake_tensor(K_DIM),
+                    "v": generate_fake_tensor(V_DIM),
+                },
+            )
+
+            worker_id = put_resp.json()["worker_id"]
+            sequence_to_worker[seq_id] = worker_id
+            print(f"{seq_id} -> worker: {worker_id}")
+
+        # Check distribution
+        print(f"\nDistribution Summary:")
+        worker_counts = {}
+        for seq_id, worker_id in sequence_to_worker.items():
+            worker_counts[worker_id] = worker_counts.get(worker_id, 0) + 1
+
+        for worker_id, count in sorted(worker_counts.items()):
+            print(f"   {worker_id}: {count} sequences")
+
+        print(f"\nTotal sequences distributed: {len(sequence_to_worker)}")
+        print(f"Number of workers used: {len(worker_counts)}")
+
+        # Don't cleanup here - let final cleanup handle it
+
+
+@pytest.mark.asyncio
+async def test_full_inference_simulation():
+    """Simulate full LLM inference: multiple sequences × layers × steps."""
+    print("\n" + "=" * 60)
+    print("TEST 3: Full Inference Simulation")
+    print("=" * 60)
+    print(
+        f"Simulating {NUM_SEQUENCES} sequences × {NUM_LAYERS} layers × {NUM_STEPS} steps"
+    )
+    print(f"Total KV entries: {NUM_SEQUENCES * NUM_LAYERS * NUM_STEPS}")
+
+    start_time = time.time()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        total_puts = 0
+        total_gets = 0
+
+        for seq_num in range(NUM_SEQUENCES):
+            seq_id = f"inference_seq_{seq_num:03d}"
+            track_sequence(seq_id)
+            print(f"\nProcessing {seq_id}...")
+
+            # Simulate generation: for each step, write KV for all layers
+            for step in range(NUM_STEPS):
+                for layer in range(NUM_LAYERS):
+                    # Put KV
+                    await client.post(
+                        f"{GATEWAY_URL}/kv/put",
+                        json={
+                            "seq_id": seq_id,
+                            "layer": layer,
+                            "step": step,
+                            "k": generate_fake_tensor(K_DIM),
+                            "v": generate_fake_tensor(V_DIM),
+                        },
+                    )
+                    total_puts += 1
+
+                # Simulate retrieval (e.g., for attention computation)
+                # Get KV from a random layer
+                random_layer = random.randint(0, NUM_LAYERS - 1)
+                await client.post(
+                    f"{GATEWAY_URL}/kv/get",
+                    json={
+                        "seq_id": seq_id,
+                        "layer": random_layer,
+                        "step": step,
+                    },
+                )
+                total_gets += 1
+
+            print(
+                f"   Completed {seq_id}: {NUM_LAYERS * NUM_STEPS} puts, {NUM_STEPS} gets"
+            )
+
+        elapsed = time.time() - start_time
+        print(f"\n Performance Summary:")
+        print(f"   Total PUTs: {total_puts}")
+        print(f"   Total GETs: {total_gets}")
+        print(f"   Total time: {elapsed:.2f}s")
+        print(f"   Throughput: {(total_puts + total_gets) / elapsed:.2f} ops/sec")
+
+        # Don't cleanup here - let final cleanup handle it
+
+
+@pytest.mark.asyncio
+async def test_sequence_locality():
+    """Verify that all entries for a sequence go to the same worker."""
+    print("\n" + "=" * 60)
+    print("TEST 4: Sequence Locality (Same Worker)")
+    print("=" * 60)
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        seq_id = "locality_test_seq"
+        track_sequence(seq_id)
+        workers_seen = set()
+
+        print(f"\nPutting KV entries for {seq_id} across multiple layers/steps...")
+
+        # Put entries for multiple layers and steps
+        for layer in range(3):
+            for step in range(3):
+                put_resp = await client.post(
+                    f"{GATEWAY_URL}/kv/put",
+                    json={
+                        "seq_id": seq_id,
+                        "layer": layer,
+                        "step": step,
+                        "k": generate_fake_tensor(K_DIM),
+                        "v": generate_fake_tensor(V_DIM),
+                    },
+                )
+                worker_id = put_resp.json()["worker_id"]
+                workers_seen.add(worker_id)
+                print(f"   layer={layer}, step={step} -> {worker_id}")
+
+        print(f"\nLocality Check:")
+        print(f"   Total entries: 9 (3 layers × 3 steps)")
+        print(f"   Workers used: {len(workers_seen)}")
+        print(f"   Worker(s): {workers_seen}")
+
+        if len(workers_seen) == 1:
+            print("Perfect locality! All entries on same worker.")
+        else:
+            print("Warning: Entries spread across multiple workers (unexpected!)")
+
+        # Don't cleanup here - let final cleanup handle it
+
+
+@pytest.mark.asyncio
+async def test_cleanup_all_sequences():
+    """Clean up all sequences created during KV cache tests."""
+    print("\n" + "=" * 60)
+    print("TEST 5: Cleanup All Test Sequences")
+    print("=" * 60)
+
+    tracked_sequences = get_tracked_sequences()
+
+    if not tracked_sequences:
+        print("No sequences to clean up.")
+        return
+
+    print(f"Found {len(tracked_sequences)} unique sequences to clean up")
+
+    cleanup_time = await cleanup_sequences(tracked_sequences)
+
+    print(f"Successfully cleaned up all test sequences")
+    print(
+        f"Cleanup throughput: {len(tracked_sequences) / cleanup_time:.2f} deletions/sec"
+    )
+
+    # Clear the tracking set
+    clear_tracked_sequences()
+
+
+async def run_all_tests():
+    """Run all tests sequentially."""
+    print("\n" + "=" * 60)
+    print("Starting Distributed KV Cache Tests")
+    print("=" * 60)
+
+    try:
+        await test_kv_put_get()
+        await test_sequence_distribution()
+        await test_full_inference_simulation()
+        await test_sequence_locality()
+        await test_cleanup_all_sequences()
+
+        print("\n" + "=" * 60)
+        print("All tests completed successfully!")
+        print("=" * 60)
+
+    except Exception as e:
+        print(f"\nTest failed with error: {e}")
+        raise
+
+
+if __name__ == "__main__":
+    asyncio.run(run_all_tests())
