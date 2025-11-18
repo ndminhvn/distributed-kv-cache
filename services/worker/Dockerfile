@@ -3,6 +3,9 @@ FROM astral/uv:0.9.9-python3.14-bookworm-slim AS builder
 
 WORKDIR /app
 
+# Build argument to control CUDA installation
+ARG ENABLE_CUDA=false
+
 # Enable bytecode compilation
 ENV UV_COMPILE_BYTECODE=1
 
@@ -14,6 +17,11 @@ COPY pyproject.toml uv.lock ./
 
 # Install dependencies
 RUN uv sync --frozen --no-dev
+
+# Install CUDA-enabled PyTorch if requested (for production GPU deployment)
+RUN if [ "$ENABLE_CUDA" = "true" ]; then \
+    uv pip install --no-deps torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121; \
+    fi
 
 # Production stage
 FROM python:3.14-slim

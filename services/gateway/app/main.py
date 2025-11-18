@@ -3,6 +3,7 @@ import httpx
 import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from typing import Any, Dict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,8 +21,8 @@ class KVPutRequest(BaseModel):
     seq_id: str
     layer: int
     step: int
-    k: list
-    v: list
+    k: Dict[str, Any]  # Serialized tensor dict
+    v: Dict[str, Any]  # Serialized tensor dict
 
 
 class KVGetRequest(BaseModel):
