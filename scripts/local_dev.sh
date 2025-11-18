@@ -41,39 +41,39 @@ function print_usage() {
 
 function start_services() {
     echo -e "${GREEN}Starting services...${NC}"
-    docker-compose up -d --build
+    docker compose up -d --build
     echo ""
     echo -e "${GREEN}Services started!${NC}"
-    echo -e "${YELLOW}Coordinator: ${NC}http://localhost:8001"
-    echo -e "${YELLOW}Gateway:     ${NC}http://localhost:8000"
-    echo -e "${YELLOW}Worker:      ${NC}http://localhost:8002"
+    echo -e "${YELLOW}Gateway:     ${NC}http://localhost:8080"
+    echo -e "${YELLOW}Coordinator: ${NC}http://localhost:8081 (or internal via Docker DNS)"
+    echo -e "${YELLOW}Worker:      ${NC}Internal only (via Docker DNS)"
     echo ""
     echo -e "${BLUE}Run '$0 logs' to see service logs${NC}"
 }
 
 function stop_services() {
     echo -e "${RED}Stopping services...${NC}"
-    docker-compose down
+    docker compose down
     echo -e "${GREEN}Services stopped!${NC}"
 }
 
 function restart_services() {
     echo -e "${YELLOW}Restarting services...${NC}"
-    docker-compose restart
+    docker compose restart
     echo -e "${GREEN}Services restarted!${NC}"
 }
 
 function show_logs() {
     if [ -z "$1" ]; then
-        docker-compose logs -f
+        docker compose logs -f
     else
-        docker-compose logs -f "$1"
+        docker compose logs -f "$1"
     fi
 }
 
 function show_status() {
     echo -e "${BLUE}Service Status:${NC}"
-    docker-compose ps
+    docker compose ps
 }
 
 function scale_workers() {
@@ -83,21 +83,21 @@ function scale_workers() {
         exit 1
     fi
     echo -e "${GREEN}Scaling workers to $1 instances...${NC}"
-    docker-compose up -d --scale worker=$1
+    docker compose up -d --scale worker=$1
     echo -e "${GREEN}Workers scaled!${NC}"
 }
 
 function clean_all() {
     echo -e "${RED}Cleaning up all containers, networks, and volumes...${NC}"
-    docker-compose down -v --remove-orphans
+    docker compose down -v --remove-orphans
     echo -e "${GREEN}Cleanup complete!${NC}"
 }
 
 function rebuild_all() {
     echo -e "${YELLOW}Rebuilding all services...${NC}"
-    docker-compose down
-    docker-compose build --no-cache
-    docker-compose up -d
+    docker compose down
+    docker compose build --no-cache
+    docker compose up -d
     echo -e "${GREEN}Rebuild complete!${NC}"
 }
 
@@ -107,7 +107,7 @@ function open_shell() {
         echo "Usage: $0 shell [coordinator|worker|gateway]"
         exit 1
     fi
-    docker-compose exec "$1" /bin/bash
+    docker compose exec "$1" /bin/bash
 }
 
 # Main script

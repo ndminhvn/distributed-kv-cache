@@ -23,6 +23,9 @@ FROM python:3.14-slim
 
 WORKDIR /app
 
+# Install curl for healthchecks
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # Copy uv and virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
@@ -34,7 +37,7 @@ COPY pyproject.toml uv.lock ./
 COPY app ./app
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8080
 
 # Run the application using uv
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
