@@ -54,27 +54,27 @@ def is_tensor_dict(obj: Any) -> bool:
 
 
 def generate_fake_kv_tensor(
-    batch_size: int = 1, num_heads: int = 8, seq_len: int = 1, head_dim: int = 64
+    seq_len: int = 1, num_heads: int = 8, head_dim: int = 64
 ) -> torch.Tensor:
     """
-    Generate a fake KV tensor similar to what would be used in transformer attention.
+    Generate a fake KV tensor for distributed KV cache.
 
-    Shape: (batch_size, num_heads, seq_len, head_dim)
+    NEW SIMPLIFIED FORMAT: (seq_len, num_heads, head_dim)
 
-    This is the STANDARD format used in production systems:
-    - HuggingFace Transformers (GPT-2, LLaMA, etc.)
-    - vLLM (optimized inference engine)
-    - TensorRT-LLM
-    - Text Generation Inference (TGI)
+    This format stores all tokens together per layer:
+    - seq_len grows with each generated token
+    - Direct access - no concatenation needed for attention
+    - Standard PyTorch convention: [seq_len, heads, dim]
 
-    Benefits of this format:
-    1. Easy token appending: concat along seq_len dimension
-    2. Compatible with standard attention: scores = Q @ K.transpose(-2, -1)
-    3. Matches most pretrained model checkpoints
-    4. Optimized GPU kernel support
+    Usage:
+    - For first token: generate_fake_kv_tensor(1, 8, 64) → [1, 8, 64]
+    - For full sequence: generate_fake_kv_tensor(10, 8, 64) → [10, 8, 64]
+    - Append new token: torch.cat([cached_kv, new_token_kv], dim=0)
 
-    For distributed KV cache, each cache entry stores one "step" worth of KV:
-    - At step t, we cache K[:, :, t:t+1, :] and V[:, :, t:t+1, :]
-    - During inference, concat all cached steps: K_full = concat([K_0, K_1, ..., K_t])
+    Benefits:
+    1. Simpler structure - no step tracking
+    2. Faster retrieval - already in attention format
+    3. Less memory overhead - single tensor per layer
+    4. Matches PyTorch attention conventions
     """
-    return torch.randn(batch_size, num_heads, seq_len, head_dim, dtype=torch.float32)
+    return torch.randn(seq_len, num_heads, head_dim, dtype=torch.float32)

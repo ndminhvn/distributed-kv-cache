@@ -25,50 +25,49 @@ class KVCache:
     PyTorch-based in-memory KV cache for LLM inference.
 
     Stores transformer KV cache with support for:
-    - Multi-step sequences (autoregressive generation)
-    - Concatenation of cached steps
+    - Multi-token sequences (autoregressive generation)
+    - Efficient appending of new tokens
     - LRU eviction
     - Memory tracking
 
     Storage format:
-        key = (seq_id, layer, step)
+        key = (seq_id, layer)
         value = {
-            "k": torch.Tensor [batch=1, num_heads, seq_len=1, head_dim],
-            "v": torch.Tensor [batch=1, num_heads, seq_len=1, head_dim]
+            "k": torch.Tensor [seq_len, num_heads, head_dim],
+            "v": torch.Tensor [seq_len, num_heads, head_dim]
         }
+    where seq_len grows with each generated token.
     """
 
     def __init__(self, max_entries: int = 50000, device: Optional[str] = None):
-        self.cache: OrderedDict[Tuple[str, int, int], Dict[str, torch.Tensor]] = (
+        self.cache: OrderedDict[Tuple[str, int], Dict[str, torch.Tensor]] = (
             OrderedDict()
         )
         self.max_entries = max_entries
         self.device = device if device is not None else get_device()
         logger.info(f"KVCache initialized with device: {self.device}")
 
-    def _make_key(self, seq_id: str, layer: int, step: int) -> Tuple[str, int, int]:
+    def _make_key(self, seq_id: str, layer: int) -> Tuple[str, int]:
         """Create cache key from sequence metadata."""
-        return (seq_id, layer, step)
+        return (seq_id, layer)
 
     def put(
         self,
         seq_id: str,
         layer: int,
-        step: int,
         k_tensor: torch.Tensor,
         v_tensor: torch.Tensor,
     ):
         """
-        Store KV tensors for a specific sequence, layer, and step.
+        Store or append KV tensors for a specific sequence and layer.
 
         Args:
             seq_id: Unique sequence identifier
             layer: Transformer layer index
-            step: Generation step index
-            k_tensor: Key tensor [batch, num_heads, seq_len, head_dim]
-            v_tensor: Value tensor [batch, num_heads, seq_len, head_dim]
+            k_tensor: Key tensor [seq_len, num_heads, head_dim] - full sequence or new token
+            v_tensor: Value tensor [seq_len, num_heads, head_dim] - full sequence or new token
         """
-        key = self._make_key(seq_id, layer, step)
+        key = self._make_key(seq_id, layer)
 
         # Move tensors to cache device and ensure they're stored
         k_stored = k_tensor.to(self.device).clone()
@@ -87,16 +86,55 @@ class KVCache:
             del evicted_value["k"]
             del evicted_value["v"]
 
-    def get(
-        self, seq_id: str, layer: int, step: int
-    ) -> Optional[Dict[str, torch.Tensor]]:
+    def append(
+        self,
+        seq_id: str,
+        layer: int,
+        k_tensor: torch.Tensor,
+        v_tensor: torch.Tensor,
+    ):
         """
-        Retrieve KV tensors for a specific sequence, layer, and step.
+        Append new token's KV to existing cache for a sequence and layer.
+
+        Args:
+            seq_id: Unique sequence identifier
+            layer: Transformer layer index
+            k_tensor: Key tensor for new token [1, num_heads, head_dim]
+            v_tensor: Value tensor for new token [1, num_heads, head_dim]
+        """
+        key = self._make_key(seq_id, layer)
+
+        # Move tensors to device
+        k_new = k_tensor.to(self.device)
+        v_new = v_tensor.to(self.device)
+
+        if key in self.cache:
+            # Append to existing cache
+            cached = self.cache[key]
+            k_concat = torch.cat([cached["k"], k_new], dim=0)
+            v_concat = torch.cat([cached["v"], v_new], dim=0)
+            self.cache[key] = {"k": k_concat, "v": v_concat}
+        else:
+            # First token for this sequence/layer
+            self.cache[key] = {"k": k_new.clone(), "v": v_new.clone()}
+
+        # Move to end (most recently used)
+        self.cache.move_to_end(key)
+
+        # Perform LRU eviction if needed
+        if len(self.cache) > self.max_entries:
+            evicted_key, evicted_value = self.cache.popitem(last=False)
+            del evicted_value["k"]
+            del evicted_value["v"]
+
+    def get(self, seq_id: str, layer: int) -> Optional[Dict[str, torch.Tensor]]:
+        """
+        Retrieve KV tensors for a specific sequence and layer.
 
         Returns:
-            Dict with "k" and "v" tensors, or None if not found
+            Dict with "k" and "v" tensors [seq_len, num_heads, head_dim], or None if not found
         """
-        key = self._make_key(seq_id, layer, step)
+        key = self._make_key(seq_id, layer)
         if key not in self.cache:
             return None
 
@@ -104,64 +142,21 @@ class KVCache:
         self.cache.move_to_end(key)
         return self.cache[key]
 
-    def get_sequence_steps(self, seq_id: str, layer: int) -> List[int]:
+    def get_seq_len(self, seq_id: str, layer: int) -> int:
         """
-        Get all cached step indices for a given sequence and layer.
+        Get the current sequence length for a given sequence and layer.
 
         Args:
             seq_id: Sequence identifier
             layer: Layer index
 
         Returns:
-            Sorted list of step indices
+            Current sequence length, or 0 if not found
         """
-        steps = [k[2] for k in self.cache.keys() if k[0] == seq_id and k[1] == layer]
-        return sorted(steps)
-
-    def concat_sequence_steps(
-        self, seq_id: str, layer: int, max_step: Optional[int] = None
-    ) -> Optional[Dict[str, torch.Tensor]]:
-        """
-        Concatenate all cached KV tensors for a sequence at a given layer.
-
-        This reconstructs the full KV cache for attention computation.
-
-        Args:
-            seq_id: Sequence identifier
-            layer: Layer index
-            max_step: If provided, only concat up to this step (inclusive)
-
-        Returns:
-            Dict with concatenated "k" and "v" tensors, or None if no steps found
-            K, V shape: [batch, num_heads, total_seq_len, head_dim]
-        """
-        steps = self.get_sequence_steps(seq_id, layer)
-        if not steps:
-            return None
-
-        if max_step is not None:
-            steps = [s for s in steps if s <= max_step]
-
-        if not steps:
-            return None
-
-        # Gather all K and V tensors
-        k_list = []
-        v_list = []
-        for step in steps:
-            entry = self.get(seq_id, layer, step)
-            if entry is not None:
-                k_list.append(entry["k"])
-                v_list.append(entry["v"])
-
-        if not k_list:
-            return None
-
-        # Concatenate along sequence dimension (dim=2)
-        k_concat = torch.cat(k_list, dim=2)
-        v_concat = torch.cat(v_list, dim=2)
-
-        return {"k": k_concat, "v": v_concat}
+        entry = self.get(seq_id, layer)
+        if entry is None:
+            return 0
+        return entry["k"].shape[0]
 
     def evict_sequence(self, seq_id: str):
         """
@@ -179,17 +174,15 @@ class KVCache:
 
     def evict_sequence_layer(self, seq_id: str, layer: int):
         """
-        Evict all steps for a specific sequence and layer.
+        Evict cache for a specific sequence and layer.
 
         Args:
             seq_id: Sequence identifier
             layer: Layer index
         """
-        keys_to_delete = [
-            k for k in self.cache.keys() if k[0] == seq_id and k[1] == layer
-        ]
-        for k in keys_to_delete:
-            entry = self.cache.pop(k)
+        key = self._make_key(seq_id, layer)
+        if key in self.cache:
+            entry = self.cache.pop(key)
             del entry["k"]
             del entry["v"]
 

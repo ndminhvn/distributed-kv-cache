@@ -20,15 +20,20 @@ class PutRequest(BaseModel):
 class KVPutRequest(BaseModel):
     seq_id: str
     layer: int
-    step: int
     k: Dict[str, Any]  # Serialized tensor dict
     v: Dict[str, Any]  # Serialized tensor dict
+
+
+class KVAppendRequest(BaseModel):
+    seq_id: str
+    layer: int
+    k: Dict[str, Any]  # Serialized tensor dict for new token
+    v: Dict[str, Any]  # Serialized tensor dict for new token
 
 
 class KVGetRequest(BaseModel):
     seq_id: str
     layer: int
-    step: int
 
 
 @app.get("/health")
@@ -84,12 +89,12 @@ async def get_kv(req: KVGetRequest):
 
         worker_addr = route["address"]
         logger.info(
-            f"Routing KV GET seq={req.seq_id} layer={req.layer} step={req.step} to {worker_addr}"
+            f"Routing KV GET seq={req.seq_id} layer={req.layer} to {worker_addr}"
         )
 
         resp = await client.post(
             f"{worker_addr}/kv/get",
-            json={"seq_id": req.seq_id, "layer": req.layer, "step": req.step},
+            json={"seq_id": req.seq_id, "layer": req.layer},
             timeout=5.0,
         )
 
@@ -112,7 +117,7 @@ async def put_kv(req: KVPutRequest):
 
         worker_addr = route["address"]
         logger.info(
-            f"Routing KV PUT seq={req.seq_id} layer={req.layer} step={req.step} to {worker_addr}"
+            f"Routing KV PUT seq={req.seq_id} layer={req.layer} to {worker_addr}"
         )
 
         resp = await client.post(
@@ -120,7 +125,35 @@ async def put_kv(req: KVPutRequest):
             json={
                 "seq_id": req.seq_id,
                 "layer": req.layer,
-                "step": req.step,
+                "k": req.k,
+                "v": req.v,
+            },
+            timeout=5.0,
+        )
+        return resp.json()
+
+
+@app.post("/kv/append")
+async def append_kv(req: KVAppendRequest):
+    """Append new token's KV to existing cache. Routes by seq_id."""
+    async with httpx.AsyncClient() as client:
+        # Route by seq_id
+        r = await client.get(f"{COORDINATOR_ADDR}/kv/route/{req.seq_id}", timeout=5.0)
+        route = r.json()
+
+        if r.status_code != 200 or "address" not in route:
+            raise HTTPException(status_code=500, detail="No route for seq_id")
+
+        worker_addr = route["address"]
+        logger.info(
+            f"Routing KV APPEND seq={req.seq_id} layer={req.layer} to {worker_addr}"
+        )
+
+        resp = await client.post(
+            f"{worker_addr}/kv/append",
+            json={
+                "seq_id": req.seq_id,
+                "layer": req.layer,
                 "k": req.k,
                 "v": req.v,
             },

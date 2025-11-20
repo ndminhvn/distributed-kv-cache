@@ -31,15 +31,20 @@ class PutRequest(BaseModel):
 class KVPutRequest(BaseModel):
     seq_id: str
     layer: int
-    step: int
     k: Dict[str, Any]  # Serialized tensor dict
     v: Dict[str, Any]  # Serialized tensor dict
+
+
+class KVAppendRequest(BaseModel):
+    seq_id: str
+    layer: int
+    k: Dict[str, Any]  # Serialized tensor dict for new token
+    v: Dict[str, Any]  # Serialized tensor dict for new token
 
 
 class KVGetRequest(BaseModel):
     seq_id: str
     layer: int
-    step: int
 
 
 # @app.on_event("startup")
@@ -100,7 +105,7 @@ def put_value(req: PutRequest):
 
 @app.post("/kv/get")
 async def get_kv(req: KVGetRequest):
-    out = kv_cache.get(req.seq_id, req.layer, req.step)
+    out = kv_cache.get(req.seq_id, req.layer)
     if out is None:
         raise HTTPException(status_code=404, detail="KV entry not found")
 
@@ -108,7 +113,7 @@ async def get_kv(req: KVGetRequest):
     return {
         "seq_id": req.seq_id,
         "layer": req.layer,
-        "step": req.step,
+        "seq_len": out["k"].shape[0],
         "k": serialize_tensor(out["k"]),
         "v": serialize_tensor(out["v"]),
         "worker_id": WORKER_ID,
@@ -121,13 +126,36 @@ async def put_kv(req: KVPutRequest):
     k_tensor = deserialize_tensor(req.k)
     v_tensor = deserialize_tensor(req.v)
 
-    kv_cache.put(req.seq_id, req.layer, req.step, k_tensor, v_tensor)
+    kv_cache.put(req.seq_id, req.layer, k_tensor, v_tensor)
 
     return {
         "status": "ok",
         "seq_id": req.seq_id,
         "layer": req.layer,
-        "step": req.step,
+        "seq_len": k_tensor.shape[0],
+        "tensor_shapes": {"k": list(k_tensor.shape), "v": list(v_tensor.shape)},
+        "tensor_dtypes": {"k": str(k_tensor.dtype), "v": str(v_tensor.dtype)},
+        "worker_id": WORKER_ID,
+    }
+
+
+@app.post("/kv/append")
+async def append_kv(req: KVAppendRequest):
+    """Append a new token's KV to existing cache."""
+    # Deserialize tensors from request
+    k_tensor = deserialize_tensor(req.k)
+    v_tensor = deserialize_tensor(req.v)
+
+    kv_cache.append(req.seq_id, req.layer, k_tensor, v_tensor)
+
+    # Get updated sequence length
+    new_seq_len = kv_cache.get_seq_len(req.seq_id, req.layer)
+
+    return {
+        "status": "ok",
+        "seq_id": req.seq_id,
+        "layer": req.layer,
+        "seq_len": new_seq_len,
         "tensor_shapes": {"k": list(k_tensor.shape), "v": list(v_tensor.shape)},
         "tensor_dtypes": {"k": str(k_tensor.dtype), "v": str(v_tensor.dtype)},
         "worker_id": WORKER_ID,
@@ -145,40 +173,13 @@ async def stats():
     return kv_cache.stats()
 
 
-@app.get("/kv/{seq_id}/steps")
-async def get_sequence_steps(seq_id: str, layer: int):
-    """Get all cached step indices for a sequence at a given layer."""
-    steps = kv_cache.get_sequence_steps(seq_id, layer)
+@app.get("/kv/{seq_id}/{layer}/length")
+async def get_sequence_length(seq_id: str, layer: int):
+    """Get the current sequence length for a sequence at a given layer."""
+    seq_len = kv_cache.get_seq_len(seq_id, layer)
     return {
         "seq_id": seq_id,
         "layer": layer,
-        "steps": steps,
-        "num_steps": len(steps),
-        "worker_id": WORKER_ID,
-    }
-
-
-@app.post("/kv/concat")
-async def concat_sequence_steps(req: KVGetRequest):
-    """
-    Concatenate all cached KV steps for a sequence at a given layer.
-    Returns the full KV cache ready for attention computation.
-    """
-    result = kv_cache.concat_sequence_steps(
-        req.seq_id, req.layer, req.step if req.step >= 0 else None
-    )
-
-    if result is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No cached steps found for seq={req.seq_id}, layer={req.layer}",
-        )
-
-    return {
-        "seq_id": req.seq_id,
-        "layer": req.layer,
-        "k": serialize_tensor(result["k"]),
-        "v": serialize_tensor(result["v"]),
-        "shape": {"k": list(result["k"].shape), "v": list(result["v"].shape)},
+        "seq_len": seq_len,
         "worker_id": WORKER_ID,
     }

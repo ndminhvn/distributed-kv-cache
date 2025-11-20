@@ -22,7 +22,6 @@ from test_utils import (
 from tensor_utils import generate_fake_kv_tensor, serialize_tensor
 
 # Standard transformer KV cache dimensions
-BATCH_SIZE = 1
 NUM_HEADS = 8
 HEAD_DIM = 64
 
@@ -48,17 +47,16 @@ async def test_concurrent_writes():
         seq_id = f"concurrent_seq_{idx % NUM_SEQUENCES:03d}"
         track_sequence(seq_id)
         layer = idx % NUM_LAYERS
-        step = idx // NUM_LAYERS
 
-        k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
-        v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+        # Generate single token KV
+        k_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
+        v_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
 
         await client.post(
             f"{GATEWAY_URL}/kv/put",
             json={
                 "seq_id": seq_id,
                 "layer": layer,
-                "step": step,
                 "k": serialize_tensor(k_tensor),
                 "v": serialize_tensor(v_tensor),
             },
@@ -100,7 +98,7 @@ async def test_mixed_read_write_load():
 
     NUM_SEQUENCES = 50
     NUM_LAYERS = 24
-    NUM_STEPS = 10
+    NUM_TOKENS = 10  # Number of tokens per sequence
     READ_WRITE_RATIO = 0.7  # 70% reads, 30% writes
 
     print(f"Simulating mixed workload with {int(READ_WRITE_RATIO*100)}% reads...")
@@ -115,26 +113,21 @@ async def test_mixed_read_write_load():
             seq_id = f"mixed_seq_{seq_num:03d}"
             track_sequence(seq_id)
             for layer in range(NUM_LAYERS):
-                for step in range(NUM_STEPS):
-                    k_tensor = generate_fake_kv_tensor(
-                        BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM
+                # Create full sequence [seq_len, num_heads, head_dim]
+                k_tensor = generate_fake_kv_tensor(NUM_TOKENS, NUM_HEADS, HEAD_DIM)
+                v_tensor = generate_fake_kv_tensor(NUM_TOKENS, NUM_HEADS, HEAD_DIM)
+                populate_tasks.append(
+                    client.post(
+                        f"{GATEWAY_URL}/kv/put",
+                        json={
+                            "seq_id": seq_id,
+                            "layer": layer,
+                            "k": serialize_tensor(k_tensor),
+                            "v": serialize_tensor(v_tensor),
+                        },
+                        timeout=30.0,
                     )
-                    v_tensor = generate_fake_kv_tensor(
-                        BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM
-                    )
-                    populate_tasks.append(
-                        client.post(
-                            f"{GATEWAY_URL}/kv/put",
-                            json={
-                                "seq_id": seq_id,
-                                "layer": layer,
-                                "step": step,
-                                "k": serialize_tensor(k_tensor),
-                                "v": serialize_tensor(v_tensor),
-                            },
-                            timeout=30.0,
-                        )
-                    )
+                )
 
         # Execute in batches to avoid overwhelming the system
         batch_size = 100
@@ -143,7 +136,7 @@ async def test_mixed_read_write_load():
             await asyncio.gather(*batch)
 
     populate_elapsed = time.time() - populate_start
-    total_entries = NUM_SEQUENCES * NUM_LAYERS * NUM_STEPS
+    total_entries = NUM_SEQUENCES * NUM_LAYERS
     print(f"Populated cache with {total_entries} entries in {populate_elapsed:.2f}s")
     print(
         f"   Population throughput: {total_entries / populate_elapsed:.2f} writes/sec"
@@ -162,14 +155,13 @@ async def test_mixed_read_write_load():
 
         seq_id = f"mixed_seq_{random.randint(0, NUM_SEQUENCES-1):03d}"
         layer = random.randint(0, NUM_LAYERS - 1)
-        step = random.randint(0, NUM_STEPS - 1)
 
         if random.random() < READ_WRITE_RATIO:
             # Read operation
             try:
                 await client.post(
                     f"{GATEWAY_URL}/kv/get",
-                    json={"seq_id": seq_id, "layer": layer, "step": step},
+                    json={"seq_id": seq_id, "layer": layer},
                     timeout=30.0,
                 )
                 read_count += 1
@@ -177,15 +169,14 @@ async def test_mixed_read_write_load():
             except:
                 pass
         else:
-            # Write operation
-            k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
-            v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+            # Write operation (append new token)
+            k_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
+            v_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
             await client.post(
-                f"{GATEWAY_URL}/kv/put",
+                f"{GATEWAY_URL}/kv/append",
                 json={
                     "seq_id": seq_id,
                     "layer": layer,
-                    "step": step,
                     "k": serialize_tensor(k_tensor),
                     "v": serialize_tensor(v_tensor),
                 },
@@ -240,15 +231,14 @@ async def test_worker_distribution_under_load():
         seq_id = f"dist_seq_{seq_num:04d}"
         track_sequence(seq_id)
 
-        k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
-        v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+        k_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
+        v_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
 
         response = await client.post(
             f"{GATEWAY_URL}/kv/put",
             json={
                 "seq_id": seq_id,
                 "layer": 0,
-                "step": 0,
                 "k": serialize_tensor(k_tensor),
                 "v": serialize_tensor(v_tensor),
             },
@@ -328,17 +318,15 @@ async def test_high_throughput_burst():
         seq_id = f"burst_seq_{idx % NUM_UNIQUE_SEQUENCES:03d}"
         track_sequence(seq_id)
         layer = random.randint(0, 23)  # 24 layers
-        step = random.randint(0, 19)  # 20 steps
 
-        k_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
-        v_tensor = generate_fake_kv_tensor(BATCH_SIZE, NUM_HEADS, 1, HEAD_DIM)
+        k_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
+        v_tensor = generate_fake_kv_tensor(1, NUM_HEADS, HEAD_DIM)
 
         await client.post(
             f"{GATEWAY_URL}/kv/put",
             json={
                 "seq_id": seq_id,
                 "layer": layer,
-                "step": step,
                 "k": serialize_tensor(k_tensor),
                 "v": serialize_tensor(v_tensor),
             },
