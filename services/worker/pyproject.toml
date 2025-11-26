@@ -9,4 +9,5 @@ dependencies = [
     "uvicorn[standard]>=0.38.0",
     "torch>=2.5.1",
     "numpy>=2.3.5",
+    "transformers>=4.47.0",
 ]
