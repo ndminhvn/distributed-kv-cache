@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from typing import Dict, List
+from typing import Dict
 
 from .hash_ring import ConsistentHashRing
 
@@ -18,9 +18,34 @@ class RegisterWorker(BaseModel):
     address: str  # internal DNS or IP
 
 
+# ============================================================================
+# HEALTH & MONITORING
+# ============================================================================
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "coordinator"}
+
+
+@app.get("/stats")
+def get_coordinator_stats():
+    """
+    Get coordinator statistics for monitoring.
+
+    Returns:
+        - Total workers registered
+        - Hash ring configuration
+        - Worker list
+    """
+    return {
+        "total_workers": len(workers),
+        "workers": workers,
+        "hash_ring": {
+            "virtual_nodes": ring.virtual_nodes,
+            "total_nodes": len(ring.nodes),
+        },
+    }
 
 
 @app.post("/register")
@@ -46,16 +71,8 @@ def deregister_worker(req: RegisterWorker):
 
 @app.get("/workers")
 def list_workers():
+    """Get list of all registered workers."""
     return workers
-
-
-@app.get("/route/{key}")
-def route_key(key: str):
-    worker_id = ring.get_node(key)
-    if worker_id is None:
-        return {"error": "No workers available"}
-
-    return {"worker_id": worker_id, "address": workers[worker_id]["address"]}
 
 
 @app.get("/kv/route/{seq_id}")
