@@ -1,0 +1,16 @@
+# Kubernetes Namespace (optional - for isolation)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: distributed-kv-cache
+---
+# ConfigMap for shared configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: default
+data:
+  COORDINATOR_ADDR: "http://coordinator:8081"
+  PYTHONUNBUFFERED: "1"
+  KV_MAX_ENTRIES: "50000"

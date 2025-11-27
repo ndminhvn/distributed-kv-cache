@@ -1,0 +1,11 @@
+# Ignore Terraform files
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+tfplan
+terraform.tfvars
+
+# Ignore kubectl config
+kubeconfig
+*.kubeconfig

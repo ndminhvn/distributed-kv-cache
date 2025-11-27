@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: worker
+  labels:
+    app: worker
+    component: inference
+spec:
+  serviceName: "worker"
+  replicas: 2 # Start with 2 worker replicas for light workload
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+        component: inference
+    spec:
+      nodeSelector:
+        role: worker
+      containers:
+        - name: worker
+          image: gcr.io/PROJECT_ID/worker:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            - name: WORKER_PORT
+              value: "8082"
+            - name: COORDINATOR_ADDR
+              value: "http://coordinator:8081"
+            - name: WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KV_MAX_ENTRIES
+              value: "50000"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              cpu: "2000m" # Reduced from 4000m - sufficient for CPU inference
+              memory: "8Gi" # Reduced from 16Gi for light workload
+            limits:
+              cpu: "4000m" # Reduced from 8000m
+              memory: "12Gi" # Reduced from 24Gi
+              # Uncomment for GPU nodes
+              # nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache/huggingface
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 60 # Model loading takes time
+            periodSeconds: 20
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8082
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: model-cache
+          emptyDir:
+            sizeLimit: 10Gi
+      # Uncomment for GPU nodes - install NVIDIA drivers
+      # tolerations:
+      # - key: "nvidia.com/gpu"
+      #   operator: "Exists"
+      #   effect: "NoSchedule"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  labels:
+    app: worker
+spec:
+  type: ClusterIP
+  clusterIP: None # Headless service for StatefulSet
+  selector:
+    app: worker
+  ports:
+    - port: 8082
+      targetPort: 8082
+      protocol: TCP
+      name: http
+---
+# Individual service for each worker pod (for direct routing)
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-0
+  labels:
+    app: worker
+spec:
+  type: ClusterIP
+  selector:
+    app: worker
+    statefulset.kubernetes.io/pod-name: worker-0
+  ports:
+    - port: 8082
+      targetPort: 8082
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-1
+  labels:
+    app: worker
+spec:
+  type: ClusterIP
+  selector:
+    app: worker
+    statefulset.kubernetes.io/pod-name: worker-1
+  ports:
+    - port: 8082
+      targetPort: 8082
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker-2
+  labels:
+    app: worker
+spec:
+  type: ClusterIP
+  selector:
+    app: worker
+    statefulset.kubernetes.io/pod-name: worker-2
+  ports:
+    - port: 8082
+      targetPort: 8082
+      protocol: TCP
