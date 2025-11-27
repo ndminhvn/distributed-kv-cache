@@ -15,32 +15,7 @@ This system accelerates LLM inference by distributing key-value cache across mul
 
 ## Architecture
 
-```
-┌─────────────┐
-│  API Client │
-└──────┬──────┘
-       │ HTTPS
-       ▼
-┌─────────────────────────────────────────┐
-│  Google Cloud Load Balancer             │
-└──────┬──────────────────────────────────┘
-       │
-       ▼
-┌──────────────────┐      ┌───────────────┐
-│  Gateway Pods    │─────▶│  Coordinator  │
-│  (2-10 replicas) │      │  (1 replica)  │
-└────────┬─────────┘      └───────────────┘
-         │                       │
-         │ Routes via            │ Consistent
-         │ seq_id hash           │ Hashing
-         │                       ▼
-         └──────────────────┬────────────────────┐
-                            │                    │
-                    ┌───────▼────────┐   ┌───────▼────────┐
-                    │  Worker-0      │   │  Worker-1      │
-                    │  GPU/CPU + KV  │   │  GPU/CPU + KV  │
-                    └────────────────┘   └────────────────┘
-```
+<img width="3506" height="1199" alt="system-overview" src="https://github.com/user-attachments/assets/eac7b714-29e3-4c26-8097-4c91f244071d" />
 
 ### Components
 
