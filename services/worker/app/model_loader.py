@@ -62,7 +62,7 @@ class ModelLoader:
             # Load model
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 device_map="auto" if self.device == "cuda" else None,
             )
 
@@ -149,17 +149,19 @@ class ModelLoader:
         return self.tokenizer.decode(token_ids[0], skip_special_tokens=True)
 
     def generate_step(
-        self, input_ids: torch.Tensor, past_key_values: Optional[Tuple] = None
-    ) -> Tuple[torch.Tensor, Tuple]:
+        self,
+        input_ids: torch.Tensor,
+        past_key_values: Optional[Tuple] = None,
+    ) -> Tuple[torch.Tensor, Optional[Tuple]]:
         """
         Run one forward pass (generate one token).
 
         Args:
             input_ids: Input token IDs [batch_size, seq_len]
-            past_key_values: Previous KV cache (HuggingFace format)
+            past_key_values: Previous KV cache as tuple of layer key-value pairs
 
         Returns:
-            (logits, new_past_key_values)
+            (logits, past_key_values as tuple)
         """
         if self.model is None:
             raise RuntimeError("No model loaded. Call load_model() first.")
@@ -171,7 +173,13 @@ class ModelLoader:
                 use_cache=True,
             )
 
-        return outputs.logits, outputs.past_key_values
+        # Handle both tuple and DynamicCache outputs for compatibility
+        past_kv = outputs.past_key_values
+        if past_kv is not None and hasattr(past_kv, "to_legacy_cache"):
+            # Convert DynamicCache to tuple if needed
+            past_kv = past_kv.to_legacy_cache()
+
+        return outputs.logits, past_kv
 
     def unload_model(self):
         """Unload model to free GPU memory."""

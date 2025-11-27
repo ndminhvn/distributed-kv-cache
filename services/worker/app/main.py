@@ -143,12 +143,15 @@ async def get_worker_stats():
 
 
 # ============================================================================
-# KV CACHE MANAGEMENT
+# KV CACHE MANAGEMENT (Testing & Debugging Endpoints)
 # ============================================================================
+# Note: These endpoints are for testing/debugging only.
+# In production, /generate handles KV cache internally.
 
 
 @app.post("/kv/get")
 async def get_kv(req: KVGetRequest):
+    """[Testing] Retrieve KV cache entry for a specific sequence and layer."""
     out = kv_cache.get(req.seq_id, req.layer)
     if out is None:
         raise HTTPException(status_code=404, detail="KV entry not found")
@@ -166,6 +169,7 @@ async def get_kv(req: KVGetRequest):
 
 @app.post("/kv/put")
 async def put_kv(req: KVPutRequest):
+    """[Testing] Store KV cache entry for a specific sequence and layer."""
     # Deserialize tensors from request
     k_tensor = deserialize_tensor(req.k)
     v_tensor = deserialize_tensor(req.v)
@@ -185,7 +189,7 @@ async def put_kv(req: KVPutRequest):
 
 @app.post("/kv/append")
 async def append_kv(req: KVAppendRequest):
-    """Append a new token's KV to existing cache."""
+    """[Testing] Append a new token's KV to existing cache."""
     # Deserialize tensors from request
     k_tensor = deserialize_tensor(req.k)
     v_tensor = deserialize_tensor(req.v)
@@ -208,13 +212,14 @@ async def append_kv(req: KVAppendRequest):
 
 @app.delete("/kv/{seq_id}")
 async def evict_seq(seq_id: str):
+    """[Operational] Evict all KV cache entries for a sequence (cleanup/memory management)."""
     kv_cache.evict_sequence(seq_id)
     return {"status": "evicted", "seq_id": seq_id, "worker_id": WORKER_ID}
 
 
 @app.get("/kv/{seq_id}/{layer}/length")
 async def get_sequence_length(seq_id: str, layer: int):
-    """Get the current sequence length for a sequence at a given layer."""
+    """[Operational] Get the current sequence length for debugging/monitoring."""
     seq_len = kv_cache.get_seq_len(seq_id, layer)
     return {
         "seq_id": seq_id,
@@ -317,8 +322,10 @@ async def generate(req: GenerateRequest):
                             past_key_values = None
                             break
 
-                        k_cached, v_cached = cached
-                        # Convert from our format [seq_len, heads, dim] back to HuggingFace format
+                        # cached is a dict with "k" and "v" keys
+                        k_cached = cached["k"]
+                        v_cached = cached["v"]
+                        # Convert from our format [seq_len, heads, dim] to HuggingFace format
                         # [batch, heads, seq_len, dim]
                         k_hf = k_cached.transpose(0, 1).unsqueeze(
                             0
@@ -373,27 +380,30 @@ async def generate(req: GenerateRequest):
                 generated_tokens.append(next_token_text)
 
                 # Store/append KV cache for each layer
-                num_layers = len(new_past_key_values)
-                for layer_idx in range(num_layers):
-                    layer_kv = new_past_key_values[layer_idx]
-                    k_tensor = layer_kv[0]  # [batch, num_heads, seq_len, head_dim]
-                    v_tensor = layer_kv[1]
+                if new_past_key_values is not None:
+                    num_layers = len(new_past_key_values)
+                    for layer_idx in range(num_layers):
+                        layer_kv = new_past_key_values[layer_idx]
+                        k_tensor = layer_kv[0]  # [batch, num_heads, seq_len, head_dim]
+                        v_tensor = layer_kv[1]
 
-                    # Convert from HuggingFace format to our format
-                    k_converted = (
-                        k_tensor.squeeze(0).transpose(0, 1).contiguous()
-                    )  # [seq_len, heads, dim]
-                    v_converted = v_tensor.squeeze(0).transpose(0, 1).contiguous()
+                        # Convert from HuggingFace format to our format
+                        k_converted = (
+                            k_tensor.squeeze(0).transpose(0, 1).contiguous()
+                        )  # [seq_len, heads, dim]
+                        v_converted = v_tensor.squeeze(0).transpose(0, 1).contiguous()
 
-                    if step == 0:
-                        # First token: store full KV
-                        kv_cache.put(req.seq_id, layer_idx, k_converted, v_converted)
-                    else:
-                        # Subsequent tokens: append to existing KV
-                        # Extract only the new token's KV (last position in seq_len dimension)
-                        k_new = k_converted[-1:, :, :]  # [1, heads, dim]
-                        v_new = v_converted[-1:, :, :]
-                        kv_cache.append(req.seq_id, layer_idx, k_new, v_new)
+                        if step == 0:
+                            # First token: store full KV
+                            kv_cache.put(
+                                req.seq_id, layer_idx, k_converted, v_converted
+                            )
+                        else:
+                            # Subsequent tokens: append to existing KV
+                            # Extract only the new token's KV (last position in seq_len dimension)
+                            k_new = k_converted[-1:, :, :]  # [1, heads, dim]
+                            v_new = v_converted[-1:, :, :]
+                            kv_cache.append(req.seq_id, layer_idx, k_new, v_new)
 
                 # Stream the token back to client
                 yield f"data: {json.dumps({'type': 'token', 'token': next_token_text, 'token_id': int(next_token_id)})}\n\n"

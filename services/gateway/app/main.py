@@ -5,6 +5,7 @@ import uuid
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Any, Dict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +20,25 @@ class GenerateRequest(BaseModel):
     temperature: float = 1.0
     top_p: float = 1.0
     model_name: str = "gpt2"
+
+
+class KVPutRequest(BaseModel):
+    seq_id: str
+    layer: int
+    k: Dict[str, Any]  # Serialized tensor dict
+    v: Dict[str, Any]  # Serialized tensor dict
+
+
+class KVAppendRequest(BaseModel):
+    seq_id: str
+    layer: int
+    k: Dict[str, Any]  # Serialized tensor dict for new token
+    v: Dict[str, Any]  # Serialized tensor dict for new token
+
+
+class KVGetRequest(BaseModel):
+    seq_id: str
+    layer: int
 
 
 # ============================================================================
@@ -57,6 +77,7 @@ async def get_worker_for_seq(seq_id: str) -> str:
 # ============================================================================
 # HEALTH & MONITORING
 # ============================================================================
+# Note: /kv/* testing endpoints are defined at the bottom of this file
 
 
 @app.get("/health")
@@ -201,3 +222,64 @@ async def generate(req: GenerateRequest):
     except Exception as e:
         logger.error(f"Generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+
+# ============================================================================
+# TESTING ENDPOINTS (For test suites only)
+# ============================================================================
+
+
+@app.post("/kv/get")
+async def get_kv(req: KVGetRequest):
+    """[Testing] Retrieve KV cache entry. Routes by seq_id to the worker storing this sequence."""
+    worker_addr = await get_worker_for_seq(req.seq_id)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{worker_addr}/kv/get",
+            json={"seq_id": req.seq_id, "layer": req.layer},
+            timeout=5.0,
+        )
+
+        if resp.status_code == 404:
+            raise HTTPException(status_code=404, detail="KV entry not found")
+
+        return resp.json()
+
+
+@app.post("/kv/put")
+async def put_kv(req: KVPutRequest):
+    """[Testing] Store KV cache entry. Routes by seq_id to ensure all entries for a sequence go to same worker."""
+    worker_addr = await get_worker_for_seq(req.seq_id)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{worker_addr}/kv/put",
+            json={
+                "seq_id": req.seq_id,
+                "layer": req.layer,
+                "k": req.k,
+                "v": req.v,
+            },
+            timeout=5.0,
+        )
+        return resp.json()
+
+
+@app.post("/kv/append")
+async def append_kv(req: KVAppendRequest):
+    """[Testing] Append new token's KV to existing cache. Routes by seq_id."""
+    worker_addr = await get_worker_for_seq(req.seq_id)
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{worker_addr}/kv/append",
+            json={
+                "seq_id": req.seq_id,
+                "layer": req.layer,
+                "k": req.k,
+                "v": req.v,
+            },
+            timeout=5.0,
+        )
+        return resp.json()
