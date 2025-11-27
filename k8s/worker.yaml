@@ -21,7 +21,7 @@ spec:
         role: worker
       containers:
         - name: worker
-          image: gcr.io/PROJECT_ID/worker:latest
+          image: REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/worker:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8082

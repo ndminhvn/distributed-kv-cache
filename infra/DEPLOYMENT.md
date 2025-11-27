@@ -59,7 +59,7 @@ gcloud config set project $GCP_PROJECT_ID
 # Enable required APIs
 gcloud services enable container.googleapis.com
 gcloud services enable compute.googleapis.com
-gcloud services enable containerregistry.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
 ```
 
 ## Step 2: Configure Terraform

@@ -20,7 +20,7 @@ spec:
         role: gateway
       containers:
         - name: gateway
-          image: gcr.io/PROJECT_ID/gateway:latest
+          image: REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/gateway:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

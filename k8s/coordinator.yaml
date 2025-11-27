@@ -20,7 +20,7 @@ spec:
         role: coordinator
       containers:
         - name: coordinator
-          image: gcr.io/PROJECT_ID/coordinator:latest
+          image: REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY/coordinator:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8081

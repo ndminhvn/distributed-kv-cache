@@ -40,13 +40,13 @@ echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━�
 gcloud config set project $PROJECT_ID
 
 echo -e "${YELLOW}Enabling Container API...${NC}"
-gcloud services enable container.googleapis.com --quiet
+gcloud services enable container.googleapis.com
 
 echo -e "${YELLOW}Enabling Compute API...${NC}"
-gcloud services enable compute.googleapis.com --quiet
+gcloud services enable compute.googleapis.com
 
-echo -e "${YELLOW}Enabling Container Registry API...${NC}"
-gcloud services enable containerregistry.googleapis.com --quiet
+echo -e "${YELLOW}Enabling Artifact Registry API...${NC}"
+gcloud services enable artifactregistry.googleapis.com
 
 echo -e "${GREEN}✓ APIs enabled${NC}"
 

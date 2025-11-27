@@ -6,7 +6,9 @@ set -e
 PROJECT_ID="${GCP_PROJECT_ID:-your-gcp-project-id}"
 REGION="${GCP_REGION:-us-central1}"
 CLUSTER_NAME="${CLUSTER_NAME:-distributed-kv-cache}"
+REPOSITORY="${ARTIFACT_REGISTRY_REPO:-distributed-kv-cache}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
+REGISTRY="${REGION}-docker.pkg.dev"
 
 # Colors for output
 RED='\033[0;31m'
@@ -67,15 +69,15 @@ TMP_DIR=$(mktemp -d)
 echo -e "${YELLOW}Processing manifests...${NC}"
 
 # Process coordinator manifest
-sed "s|gcr.io/PROJECT_ID|gcr.io/${PROJECT_ID}|g" k8s/coordinator.yaml > ${TMP_DIR}/coordinator.yaml
+sed "s|REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY|${REGISTRY}/${PROJECT_ID}/${REPOSITORY}|g" k8s/coordinator.yaml > ${TMP_DIR}/coordinator.yaml
 
 # Process gateway manifest
-sed -e "s|gcr.io/PROJECT_ID|gcr.io/${PROJECT_ID}|g" \
+sed -e "s|REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY|${REGISTRY}/${PROJECT_ID}/${REPOSITORY}|g" \
     -e "s|LOAD_BALANCER_IP|${LB_IP}|g" \
     k8s/gateway.yaml > ${TMP_DIR}/gateway.yaml
 
 # Process worker manifest
-sed "s|gcr.io/PROJECT_ID|gcr.io/${PROJECT_ID}|g" k8s/worker.yaml > ${TMP_DIR}/worker.yaml
+sed "s|REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY|${REGISTRY}/${PROJECT_ID}/${REPOSITORY}|g" k8s/worker.yaml > ${TMP_DIR}/worker.yaml
 
 # Deploy services
 echo -e "\n${YELLOW}Deploying coordinator...${NC}"

@@ -207,14 +207,14 @@ flowchart LR
 
 **Container Images:**
 
-- **Gateway**: `gcr.io/project-id/gateway:latest` (FastAPI app with routing logic)
-- **Coordinator**: `gcr.io/project-id/coordinator:latest` (Consistent hashing service)
-- **Worker**: `gcr.io/project-id/worker:latest` (PyTorch + Model + KV Cache)
+- **Gateway**: `REGION-docker.pkg.dev/PROJECT_ID/distributed-kv-cache/gateway:latest` (FastAPI app with routing logic)
+- **Coordinator**: `REGION-docker.pkg.dev/PROJECT_ID/distributed-kv-cache/coordinator:latest` (Consistent hashing service)
+- **Worker**: `REGION-docker.pkg.dev/PROJECT_ID/distributed-kv-cache/worker:latest` (PyTorch + Model + KV Cache)
 
 **Build & Deploy Process:**
 
 1. Build Docker images locally or in Cloud Build
-2. Push to Google Container Registry (GCR)
+2. Push to Google Artifact Registry
 3. Kubernetes pulls images and creates pods
 4. Each pod runs one Docker container
 
