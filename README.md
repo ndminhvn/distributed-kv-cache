@@ -25,7 +25,31 @@ This system accelerates LLM inference by distributing key-value cache across mul
 
 ## Quick Start
 
-### Option 1: Automated Deployment (Recommended)
+### Option 1: Using Dev Container (Recommended)
+
+For a consistent, isolated development environment with all deployment tools pre-installed:
+
+1. **Open in Dev Container**
+
+   - Install "Dev Containers" extension in VS Code
+   - Press `F1` → "Dev Containers: Reopen in Container"
+   - Wait for container to build (2-5 minutes first time)
+
+2. **Deploy to GKE**
+
+   ```bash
+   # Authenticate with GCP
+   gcloud auth login
+
+   # Run automated deployment
+   ./scripts/quickstart_gke.sh
+   ```
+
+The dev container includes: `gcloud`, `terraform`, `kubectl`, `docker`, `uv`, and all necessary tools.
+
+### Option 2: Automated Deployment (Local Environment)
+
+If you have `gcloud`, `terraform`, and `kubectl` installed locally:
 
 ```bash
 # One command deployment
@@ -40,9 +64,12 @@ This interactive script will:
 4. Build and push Docker images
 5. Deploy all services
 
-### Option 2: Manual Deployment
+### Option 3: Manual Deployment
 
 ```bash
+# Prerequisites: gcloud, terraform, kubectl installed
+# (Or use dev container - see Option 1)
+
 # 1. Configure GCP
 export GCP_PROJECT_ID="your-project-id"
 gcloud config set project $GCP_PROJECT_ID
@@ -64,12 +91,31 @@ cd ..
 
 See [infra/DEPLOYMENT.md](infra/DEPLOYMENT.md) for detailed instructions.
 
-### Option 3: Local Development
+### Option 4: Local Development
 
 ```bash
-# Run locally with Docker Compose
+# Run locally with Docker Compose (dev container or local)
 ./scripts/local_dev.sh
 ```
+
+## Development Environment
+
+### Using Dev Container (Recommended)
+
+The dev container provides an isolated environment with all tools pre-installed:
+
+- **Cloud Tools**: gcloud CLI, kubectl, Terraform
+- **Python Tools**: Python 3.14, uv package manager
+- **Container Tools**: Docker CLI for building images
+- **VS Code Extensions**: Python, Kubernetes, Terraform, Cloud Code
+
+**Get Started:**
+
+1. Install "Dev Containers" extension in VS Code
+2. Open project and select "Reopen in Container"
+3. All deployment scripts work out of the box!
+
+See [.devcontainer/README.md](.devcontainer/README.md) for full documentation.
 
 ## Performance Testing
 

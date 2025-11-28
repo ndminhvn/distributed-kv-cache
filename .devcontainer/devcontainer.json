@@ -1,30 +1,50 @@
 {
   "name": "Distributed KV Cache Dev",
-  // Use custom Dockerfile for minimal dev container
   "build": {
     "dockerfile": "Dockerfile",
     "context": "."
   },
-  // Mount workspace and Docker socket for docker-compose
+  "workspaceFolder": "/workspaces/distributed-kv-cache",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/distributed-kv-cache,type=bind",
+  // Set custom container name
+  "runArgs": [
+    "--name=distributed-kv-cache-devcontainer"
+  ],
+  // Install development tools via features
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "version": "latest",
+      "enableNonRootDocker": "true"
+    },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "none",
+      "minikube": "none"
+    },
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "latest"
+    }
+  },
+  // Mount host Docker socket for Docker-out-of-Docker (use host's Docker daemon)
   "mounts": [
     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
   ],
   // Forward ports for all services (when running via docker-compose)
   "forwardPorts": [
-    8000,
-    8001,
-    8002
+    8080,
+    8081,
+    8082
   ],
   "portsAttributes": {
-    "8000": {
+    "8080": {
       "label": "Gateway",
       "onAutoForward": "notify"
     },
-    "8001": {
+    "8081": {
       "label": "Coordinator",
       "onAutoForward": "notify"
     },
-    "8002": {
+    "8082": {
       "label": "Worker",
       "onAutoForward": "notify"
     }
@@ -33,16 +53,23 @@
   "customizations": {
     "vscode": {
       "extensions": [
+        // Python development
         "ms-python.python",
         "ms-python.vscode-pylance",
         "ms-python.black-formatter",
         "ms-python.isort",
+        // Cloud & Infrastructure
         "ms-azuretools.vscode-docker",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "hashicorp.terraform",
+        "GoogleCloudTools.cloudcode",
+        // General development
         "GitHub.copilot",
         "GitHub.copilot-chat",
         "streetsidesoftware.code-spell-checker",
         "eamodio.gitlens",
-        "donjayamanne.githistory"
+        "donjayamanne.githistory",
+        "redhat.vscode-yaml"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",

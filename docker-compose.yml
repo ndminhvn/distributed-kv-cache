@@ -9,7 +9,7 @@ services:
       - "8081:8081"
     volumes:
       # Mount source code for hot-reload during development
-      - ./services/coordinator/app:/app/app
+      - ${PWD}/services/coordinator/app:/app/app
     environment:
       - PYTHONUNBUFFERED=1
     networks:
@@ -29,7 +29,7 @@ services:
     # NO PORT MAPPING - workers are internal-only
     volumes:
       # Mount source code for hot-reload during development
-      - ./services/worker/app:/app/app
+      - ${PWD}/services/worker/app:/app/app
     environment:
       - PYTHONUNBUFFERED=1
       - COORDINATOR_ADDR=http://coordinator:8081
@@ -56,7 +56,7 @@ services:
       - "8080:8080"
     volumes:
       # Mount source code for hot-reload during development
-      - ./services/gateway/app:/app/app
+      - ${PWD}/services/gateway/app:/app/app
     environment:
       - PYTHONUNBUFFERED=1
       - COORDINATOR_ADDR=http://coordinator:8081
