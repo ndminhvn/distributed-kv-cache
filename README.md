@@ -247,7 +247,7 @@ curl -X POST http://$GATEWAY_IP/generate \
 curl http://$GATEWAY_IP/stats | jq
 ```
 
-## Cost Estimation
+<!-- ## Cost Estimation
 
 **CPU-Only Deployment** (testing):
 
@@ -263,7 +263,7 @@ curl http://$GATEWAY_IP/stats | jq
 - Workers: 3x n1-standard-8 + T4 GPU ≈ $900/month
 - **Total**: ~$975/month
 
-Use preemptible/spot instances for 60-80% savings.
+Use preemptible/spot instances for 60-80% savings. -->
 
 ## Security
 
