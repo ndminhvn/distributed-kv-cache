@@ -34,11 +34,11 @@ spec:
               value: "1"
           resources:
             requests:
-              cpu: "500m" # Reduced from 1000m for light workload
-              memory: "1Gi" # Reduced from 2Gi for light workload
+              cpu: "250m" # Further reduced for small node
+              memory: "512Mi" # Reduced to fit on gateway node
             limits:
-              cpu: "1000m" # Reduced from 2000m
-              memory: "2Gi" # Reduced from 4Gi
+              cpu: "1000m"
+              memory: "1Gi" # Reduced from 2Gi
           livenessProbe:
             httpGet:
               path: /health
