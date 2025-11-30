@@ -40,6 +40,7 @@ For a consistent, isolated development environment with all deployment tools pre
    ```bash
    # Authenticate with GCP
    gcloud auth login
+   gcloud auth application-default login
 
    # Run automated deployment
    ./scripts/quickstart_gke.sh
