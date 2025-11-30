@@ -264,7 +264,7 @@ kubectl describe pod worker-0
 # Common issues:
 # - GPU quota exceeded (reduce gpu_count or disable GPU)
 # - Insufficient resources (check node capacity)
-# - Image pull errors (check GCR permissions)
+# - Image pull errors (check GAR permissions)
 ```
 
 ### Workers crashing during model load
