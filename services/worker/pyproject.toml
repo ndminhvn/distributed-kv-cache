@@ -3,7 +3,7 @@ name = "worker"
 version = "0.1.0"
 description = "Worker node that stores local KV pairs"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "fastapi[standard]>=0.121.2",
     "uvicorn[standard]>=0.38.0",
