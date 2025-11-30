@@ -113,10 +113,6 @@ resource "google_container_node_pool" "gateway_pool" {
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform"
     ]
-
-    workload_metadata_config {
-      mode = "GKE_METADATA"
-    }
   }
 
   autoscaling {
