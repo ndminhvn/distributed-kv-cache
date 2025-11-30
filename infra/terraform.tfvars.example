@@ -1,6 +1,7 @@
 # GCP Configuration
 project_id   = "your-gcp-project-id"
 region       = "us-central1"
+zone         = "us-central1-a"  # Single zone to minimize quota usage
 cluster_name = "distributed-kv-cache"
 
 # Gateway Pool Configuration (Optimized for light workload)

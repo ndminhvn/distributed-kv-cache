@@ -55,23 +55,21 @@ resource "google_compute_firewall" "allow_internal" {
   target_tags   = ["gke-node"]
 }
 
-# GKE Cluster
+# GKE Cluster (Zonal for minimal quota usage)
 resource "google_container_cluster" "primary" {
   name     = var.cluster_name
-  location = var.region
+  location = var.zone  # Use zone instead of region for single-zone cluster
 
   # We can't create a cluster with no node pool defined, but we want to only use
   # separately managed node pools. So we create the smallest possible default
   # node pool and immediately delete it.
   remove_default_node_pool = true
   initial_node_count       = 1
+  
+  # Allow Terraform to destroy the cluster (disable for production)
+  deletion_protection = false
 
   network = google_compute_network.vpc.name
-
-  # Enable Workload Identity
-  workload_identity_config {
-    workload_pool = "${var.project_id}.svc.id.goog"
-  }
 
   # Use automatic IP allocation
   ip_allocation_policy {
@@ -79,13 +77,13 @@ resource "google_container_cluster" "primary" {
     services_ipv4_cidr_block = ""
   }
 
-  # Enable autopilot features
+  # Enable cluster add-ons
   addons_config {
     http_load_balancing {
-      disabled = false
+      disabled = false  # Enable ingress/load balancer support
     }
     horizontal_pod_autoscaling {
-      disabled = false
+      disabled = false  # Enable HPA for pod autoscaling
     }
   }
 
@@ -98,7 +96,7 @@ resource "google_container_cluster" "primary" {
 # Gateway Node Pool (CPU-optimized for API routing)
 resource "google_container_node_pool" "gateway_pool" {
   name       = "gateway-pool"
-  location   = var.region
+  location   = var.zone
   cluster    = google_container_cluster.primary.name
   node_count = var.gateway_node_count
 
@@ -130,7 +128,7 @@ resource "google_container_node_pool" "gateway_pool" {
 # Coordinator Node Pool (CPU-optimized for coordination)
 resource "google_container_node_pool" "coordinator_pool" {
   name       = "coordinator-pool"
-  location   = var.region
+  location   = var.zone
   cluster    = google_container_cluster.primary.name
   node_count = 1 # Coordinator doesn't need scaling
 
@@ -147,17 +145,13 @@ resource "google_container_node_pool" "coordinator_pool" {
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform"
     ]
-
-    workload_metadata_config {
-      mode = "GKE_METADATA"
-    }
   }
 }
 
 # Worker Node Pool (GPU-enabled for inference)
 resource "google_container_node_pool" "worker_pool" {
   name       = "worker-pool"
-  location   = var.region
+  location   = var.zone
   cluster    = google_container_cluster.primary.name
   node_count = var.worker_node_count
 
@@ -183,22 +177,12 @@ resource "google_container_node_pool" "worker_pool" {
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform"
     ]
-
-    workload_metadata_config {
-      mode = "GKE_METADATA"
-    }
   }
 
   autoscaling {
     min_node_count = var.worker_min_nodes
     max_node_count = var.worker_max_nodes
   }
-}
-
-# External IP for Load Balancer
-resource "google_compute_address" "lb_ip" {
-  name   = "${var.cluster_name}-lb-ip"
-  region = var.region
 }
 
 # Outputs
@@ -222,11 +206,6 @@ output "cluster_ca_certificate" {
 output "region" {
   value       = var.region
   description = "GCP region"
-}
-
-output "load_balancer_ip" {
-  value       = google_compute_address.lb_ip.address
-  description = "External IP address for load balancer"
 }
 
 output "network_name" {

@@ -5,6 +5,7 @@ set -e
 # Configuration
 PROJECT_ID="${GCP_PROJECT_ID:-your-gcp-project-id}"
 REGION="${GCP_REGION:-us-central1}"
+ZONE="${GCP_ZONE:-us-central1-a}"
 CLUSTER_NAME="${CLUSTER_NAME:-distributed-kv-cache}"
 REPOSITORY="${ARTIFACT_REGISTRY_REPO:-distributed-kv-cache}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
@@ -50,19 +51,8 @@ fi
 # Get cluster credentials
 echo -e "\n${YELLOW}Getting cluster credentials...${NC}"
 gcloud container clusters get-credentials ${CLUSTER_NAME} \
-    --region ${REGION} \
+    --zone ${ZONE} \
     --project ${PROJECT_ID}
-
-# Get load balancer IP from Terraform output
-echo -e "\n${YELLOW}Getting load balancer IP...${NC}"
-cd infra
-LB_IP=$(terraform output -raw load_balancer_ip 2>/dev/null || echo "")
-cd ..
-
-if [ -z "$LB_IP" ]; then
-    echo -e "${YELLOW}Warning: Load balancer IP not found. Service will get dynamic IP.${NC}"
-    LB_IP="# Dynamic IP"
-fi
 
 # Create temporary directory for processed manifests
 TMP_DIR=$(mktemp -d)
@@ -71,10 +61,8 @@ echo -e "${YELLOW}Processing manifests...${NC}"
 # Process coordinator manifest
 sed "s|REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY|${REGISTRY}/${PROJECT_ID}/${REPOSITORY}|g" k8s/coordinator.yaml > ${TMP_DIR}/coordinator.yaml
 
-# Process gateway manifest
-sed -e "s|REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY|${REGISTRY}/${PROJECT_ID}/${REPOSITORY}|g" \
-    -e "s|LOAD_BALANCER_IP|${LB_IP}|g" \
-    k8s/gateway.yaml > ${TMP_DIR}/gateway.yaml
+# Process gateway manifest (ephemeral IP, no need for load balancer IP replacement)
+sed "s|REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY|${REGISTRY}/${PROJECT_ID}/${REPOSITORY}|g" k8s/gateway.yaml > ${TMP_DIR}/gateway.yaml
 
 # Process worker manifest
 sed "s|REGION-docker.pkg.dev/PROJECT_ID/REPOSITORY|${REGISTRY}/${PROJECT_ID}/${REPOSITORY}|g" k8s/worker.yaml > ${TMP_DIR}/worker.yaml

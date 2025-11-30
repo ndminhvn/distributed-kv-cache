@@ -47,8 +47,7 @@ view_logs() {
     echo "2) Gateway"
     echo "3) Worker-0"
     echo "4) Worker-1"
-    echo "5) Worker-2"
-    echo "6) All workers"
+    echo "5) All workers"
     read -p "Choice: " choice
     
     case $choice in
@@ -56,8 +55,7 @@ view_logs() {
         2) kubectl logs -f deployment/gateway ;;
         3) kubectl logs -f worker-0 ;;
         4) kubectl logs -f worker-1 ;;
-        5) kubectl logs -f worker-2 ;;
-        6) kubectl logs -f -l app=worker --max-log-requests=10 ;;
+        5) kubectl logs -f -l app=worker --max-log-requests=10 ;;
         *) echo "Invalid choice" ;;
     esac
 }

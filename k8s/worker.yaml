@@ -124,19 +124,3 @@ spec:
     - port: 8082
       targetPort: 8082
       protocol: TCP
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: worker-2
-  labels:
-    app: worker
-spec:
-  type: ClusterIP
-  selector:
-    app: worker
-    statefulset.kubernetes.io/pod-name: worker-2
-  ports:
-    - port: 8082
-      targetPort: 8082
-      protocol: TCP

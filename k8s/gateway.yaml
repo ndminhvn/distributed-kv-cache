@@ -60,8 +60,7 @@ metadata:
   labels:
     app: gateway
 spec:
-  type: LoadBalancer
-  loadBalancerIP: LOAD_BALANCER_IP # Will be replaced by deployment script
+  type: LoadBalancer # Uses ephemeral IP
   selector:
     app: gateway
   ports:

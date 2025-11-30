@@ -25,13 +25,17 @@ echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━�
 read -p "Enter your GCP Project ID: " PROJECT_ID
 read -p "Enter GCP Region [us-central1]: " REGION
 REGION=${REGION:-us-central1}
+read -p "Enter GCP Zone [${REGION}-a]: " ZONE
+ZONE=${ZONE:-${REGION}-a}
 
 export GCP_PROJECT_ID=$PROJECT_ID
 export GCP_REGION=$REGION
+export GCP_ZONE=$ZONE
 
 echo -e "\n${GREEN}✓ Configuration set${NC}"
 echo -e "  Project: $PROJECT_ID"
 echo -e "  Region: $REGION"
+echo -e "  Zone: $ZONE (zonal cluster for minimal quota)"
 
 # Step 2: Enable APIs
 echo -e "\n${BLUE}Step 2: Enable Required GCP APIs${NC}"
@@ -59,7 +63,8 @@ cd infra
 if [ ! -f "terraform.tfvars" ]; then
     cp terraform.tfvars.example terraform.tfvars
     sed -i.bak "s/your-gcp-project-id/$PROJECT_ID/g" terraform.tfvars
-    sed -i.bak "s/us-central1/$REGION/g" terraform.tfvars
+    sed -i.bak "s/region = \"us-central1\"/region = \"$REGION\"/g" terraform.tfvars
+    sed -i.bak "s/zone = \"us-central1-a\"/zone = \"$ZONE\"/g" terraform.tfvars
     rm -f terraform.tfvars.bak
     echo -e "${GREEN}✓ Created terraform.tfvars${NC}"
 else
