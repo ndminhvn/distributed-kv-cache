@@ -68,6 +68,7 @@ fi
 # Build and push coordinator
 echo -e "\n${YELLOW}[1/3] Building coordinator image...${NC}"
 docker build \
+    --platform linux/amd64 \
     -t ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/coordinator:${IMAGE_TAG} \
     -f services/coordinator/Dockerfile \
     services/coordinator
@@ -78,6 +79,7 @@ docker push ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/coordinator:${IMAGE_TAG}
 # Build and push gateway
 echo -e "\n${YELLOW}[2/3] Building gateway image...${NC}"
 docker build \
+    --platform linux/amd64 \
     -t ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/gateway:${IMAGE_TAG} \
     -f services/gateway/Dockerfile \
     services/gateway
@@ -88,6 +90,7 @@ docker push ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/gateway:${IMAGE_TAG}
 # Build and push worker
 echo -e "\n${YELLOW}[3/3] Building worker image...${NC}"
 docker build \
+    --platform linux/amd64 \
     --build-arg ENABLE_CUDA=${ENABLE_GPU} \
     -t ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/worker:${IMAGE_TAG} \
     -f services/worker/Dockerfile \

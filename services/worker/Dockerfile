@@ -20,7 +20,7 @@ RUN uv sync --frozen --no-dev
 
 # Install CUDA-enabled PyTorch if requested (for production GPU deployment)
 RUN if [ "$ENABLE_CUDA" = "true" ]; then \
-    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126; \
+    uv pip install torch --index-url https://download.pytorch.org/whl/cu126; \
     fi
 
 # Production stage

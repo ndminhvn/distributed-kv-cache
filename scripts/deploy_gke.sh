@@ -39,6 +39,7 @@ fi
 echo -e "\n${BLUE}Configuration:${NC}"
 echo -e "  Project ID:    ${PROJECT_ID}"
 echo -e "  Region:        ${REGION}"
+echo -e "  Zone:          ${ZONE}"
 echo -e "  Cluster:       ${CLUSTER_NAME}"
 echo -e "  Image Tag:     ${IMAGE_TAG}"
 
