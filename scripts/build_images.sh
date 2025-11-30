@@ -65,7 +65,22 @@ else
     echo -e "${GREEN}Building worker image for CPU only${NC}"
 fi
 
+# Ask which services to build
+echo -e "\n${YELLOW}Select services to build:${NC}"
+read -p "Build coordinator? (y/n) " -n 1 -r
+echo
+BUILD_COORDINATOR=$([[ $REPLY =~ ^[Yy]$ ]] && echo "true" || echo "false")
+
+read -p "Build gateway? (y/n) " -n 1 -r
+echo
+BUILD_GATEWAY=$([[ $REPLY =~ ^[Yy]$ ]] && echo "true" || echo "false")
+
+read -p "Build worker? (y/n) " -n 1 -r
+echo
+BUILD_WORKER=$([[ $REPLY =~ ^[Yy]$ ]] && echo "true" || echo "false")
+
 # Build and push coordinator
+if [[ "$BUILD_COORDINATOR" == "true" ]]; then
 echo -e "\n${YELLOW}[1/3] Building coordinator image...${NC}"
 docker build \
     --platform linux/amd64 \
@@ -75,8 +90,12 @@ docker build \
 
 echo -e "${GREEN}Pushing coordinator image...${NC}"
 docker push ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/coordinator:${IMAGE_TAG}
+else
+echo -e "${YELLOW}Skipping coordinator build${NC}"
+fi
 
 # Build and push gateway
+if [[ "$BUILD_GATEWAY" == "true" ]]; then
 echo -e "\n${YELLOW}[2/3] Building gateway image...${NC}"
 docker build \
     --platform linux/amd64 \
@@ -86,8 +105,12 @@ docker build \
 
 echo -e "${GREEN}Pushing gateway image...${NC}"
 docker push ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/gateway:${IMAGE_TAG}
+else
+echo -e "${YELLOW}Skipping gateway build${NC}"
+fi
 
 # Build and push worker
+if [[ "$BUILD_WORKER" == "true" ]]; then
 echo -e "\n${YELLOW}[3/3] Building worker image...${NC}"
 docker build \
     --platform linux/amd64 \
@@ -98,15 +121,17 @@ docker build \
 
 echo -e "${GREEN}Pushing worker image...${NC}"
 docker push ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/worker:${IMAGE_TAG}
+else
+echo -e "${YELLOW}Skipping worker build${NC}"
+fi
 
 # Summary
 echo -e "\n${GREEN}================================================${NC}"
 echo -e "${GREEN}Build Complete!${NC}"
 echo -e "${GREEN}================================================${NC}"
-echo -e "Images pushed to Artifact Registry:"
-echo -e "  - ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/coordinator:${IMAGE_TAG}"
-echo -e "  - ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/gateway:${IMAGE_TAG}"
-echo -e "  - ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/worker:${IMAGE_TAG} (GPU: ${ENABLE_GPU})"
+[[ "$BUILD_COORDINATOR" == "true" ]] && echo -e "  - ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/coordinator:${IMAGE_TAG}"
+[[ "$BUILD_GATEWAY" == "true" ]] && echo -e "  - ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/gateway:${IMAGE_TAG}"
+[[ "$BUILD_WORKER" == "true" ]] && echo -e "  - ${REGISTRY}/${PROJECT_ID}/${REPOSITORY}/worker:${IMAGE_TAG} (GPU: ${ENABLE_GPU})"
 echo -e "\n${YELLOW}Next steps:${NC}"
 echo -e "  1. Run: cd infra && terraform init"
 echo -e "  2. Run: terraform apply"
