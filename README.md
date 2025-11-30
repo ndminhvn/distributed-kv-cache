@@ -46,6 +46,12 @@ For a consistent, isolated development environment with all deployment tools pre
    ./scripts/quickstart_gke.sh
    ```
 
+3. **Optional Docker Config if failing to build images from inside the dev container**
+  
+   ```bash
+   sudo chown root:docker /var/run/docker.sock
+   ```
+
 The dev container includes: `gcloud`, `terraform`, `kubectl`, `docker`, `uv`, and all necessary tools.
 
 ### Option 2: Automated Deployment (Local Environment)
