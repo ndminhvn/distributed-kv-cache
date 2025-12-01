@@ -20,7 +20,8 @@ show_menu() {
     echo "6) Update deployment"
     echo "7) Monitor autoscaling"
     echo "8) Get resource usage"
-    echo "9) Delete deployment"
+    echo "9) Pause cluster (scale to zero / delete nodes)"
+    echo "10) Delete deployment"
     echo "0) Exit"
     echo ""
 }
@@ -164,6 +165,63 @@ resource_usage() {
     kubectl top pods
 }
 
+pause_cluster() {
+    echo -e "${YELLOW}Choose pause method:${NC}"
+    echo "1) Scale all pods to zero (keeps nodes running, stops costs for pods)"
+    echo "2) Delete node pools (keeps cluster, deletes nodes)"
+    echo "3) Cancel"
+    read -p "Choice: " choice
+    
+    case $choice in
+        1)
+            echo -e "${YELLOW}Scaling all deployments to zero...${NC}"
+            kubectl scale deployment coordinator --replicas=0
+            kubectl scale deployment gateway --replicas=0
+            kubectl scale statefulset worker --replicas=0
+            echo -e "${GREEN}All pods scaled to zero${NC}"
+            echo ""
+            echo -e "${BLUE}To resume:${NC}"
+            echo "  kubectl scale deployment coordinator --replicas=1"
+            echo "  kubectl scale deployment gateway --replicas=1"
+            echo "  kubectl scale statefulset worker --replicas=2"
+            ;;
+        2)
+            read -p "Are you sure? This will delete all node pools. (y/n) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                CLUSTER_NAME="${GKE_CLUSTER_NAME:-distributed-kv-cache}"
+                # Detect if cluster is zonal or regional
+                LOCATION=$(gcloud container clusters list --filter="name=$CLUSTER_NAME" --format="value(location)")
+                LOCATION_TYPE=$(gcloud container clusters list --filter="name=$CLUSTER_NAME" --format="value(location_type)")
+                
+                if [[ "$LOCATION_TYPE" == "ZONAL" ]]; then
+                    LOCATION_FLAG="--zone=$LOCATION"
+                else
+                    LOCATION_FLAG="--region=$LOCATION"
+                fi
+                
+                echo -e "${YELLOW}Deleting node pools...${NC}"
+                gcloud container node-pools delete coordinator-pool --cluster=$CLUSTER_NAME $LOCATION_FLAG || true
+                gcloud container node-pools delete gateway-pool --cluster=$CLUSTER_NAME $LOCATION_FLAG || true
+                gcloud container node-pools delete worker-pool --cluster=$CLUSTER_NAME $LOCATION_FLAG || true
+                echo -e "${GREEN}Node pools deleted${NC}"
+                echo ""
+                echo -e "${BLUE}To resume:${NC}"
+                echo "  cd infra && terraform apply"
+                echo "  ./scripts/deploy_gke.sh"
+            else
+                echo "Cancelled"
+            fi
+            ;;
+        3)
+            echo "Cancelled"
+            ;;
+        *)
+            echo "Invalid choice"
+            ;;
+    esac
+}
+
 delete_deployment() {
     echo -e "${YELLOW}WARNING: This will delete all deployments${NC}"
     read -p "Are you sure? (type 'yes' to confirm): " confirm
@@ -200,7 +258,8 @@ while true; do
         6) update_deployment ;;
         7) monitor_autoscaling ;;
         8) resource_usage ;;
-        9) delete_deployment ;;
+        9) pause_cluster ;;
+        10) delete_deployment ;;
         0) echo "Goodbye!"; exit 0 ;;
         *) echo "Invalid option" ;;
     esac
