@@ -241,51 +241,68 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph Worker["Worker Pod (GPU Node)"]
-        subgraph API["FastAPI Application"]
-            ENDPOINT1["/inference/init"]
-            ENDPOINT2["/inference/step"]
-            ENDPOINT3["/kv/put"]
-            ENDPOINT4["/kv/get"]
-            ENDPOINT5["/kv/stats"]
+        subgraph API["FastAPI Endpoints"]
+            GENERATE["/generate<br/>(streaming)<br/>Full generation loop"]
+            STATS["/stats<br/>Cache & model info"]
+            HEALTH["/health<br/>Readiness probe"]
+        end
+
+        subgraph GenLoop["Generation Loop"]
+            INIT["1. Initialize Model<br/>(lazy load on first use)"]
+            PREFILL["2. Prefill<br/>(process prompt,<br/>cache all KVs)"]
+            DECODE["3. Decode Loop<br/>(generate tokens,<br/>append to cache)"]
+            STREAM["4. Stream Tokens<br/>(SSE format)"]
         end
 
         subgraph Model["Model Layer"]
             LOADER["Model Loader<br/>(HuggingFace Transformers)"]
-            LLM["LLM Model<br/>(e.g., LLaMA-7B, GPT-2)<br/>Loaded on GPU"]
+            LLM["LLM Model<br/>(e.g., GPT-2)"]
             TOKENIZER["Tokenizer"]
         end
 
         subgraph Cache["KV Cache Layer"]
             KVCACHE["TorchKVCache<br/>(OrderedDict)<br/>Storage: (seq_id, layer) → {k, v}<br/>k, v: [seq_len, num_heads, head_dim]"]
-            APPEND["Append Logic<br/>Add new token to seq_len dimension"]
+            APPEND["Append Logic<br/>torch.cat along seq_len"]
             EVICT["LRU Eviction<br/>Memory Management"]
         end
 
-        subgraph GPU["NVIDIA GPU"]
-            VRAM["GPU Memory (16GB)<br/>- Model Weights: ~14GB<br/>- KV Cache: ~2GB<br/>- Activations: ~512MB"]
+        subgraph Compute["Compute Resource"]
+            DEVICE["GPU Memory<br/>- Model Weights<br/>- KV Cache<br/>- Activations"]
         end
     end
 
-    ENDPOINT1 --> LOADER
-    ENDPOINT2 --> LLM
-    ENDPOINT3 --> KVCACHE
-    ENDPOINT4 --> KVCACHE
-    ENDPOINT5 --> KVCACHE
+    GENERATE --> INIT
+    INIT --> PREFILL
+    PREFILL --> DECODE
+    DECODE --> STREAM
+    STATS --> KVCACHE
+    HEALTH --> LLM
 
+    INIT --> LOADER
+    PREFILL --> LLM
+    DECODE --> LLM
     LOADER --> LLM
     LLM --> TOKENIZER
     LLM --> KVCACHE
     KVCACHE --> APPEND
     KVCACHE --> EVICT
 
-    LLM -.->|Uses| VRAM
-    KVCACHE -.->|Stores| VRAM
+    LLM -.->|Uses| DEVICE
+    KVCACHE -.->|Stores| DEVICE
 
     style API fill:#fff4e1
+    style GenLoop fill:#e1f5ff
     style Model fill:#e1ffe1
     style Cache fill:#f0e1ff
-    style VRAM fill:#ffe1e1
+    style DEVICE fill:#ffe1e1
 ```
+
+**Key Features:**
+
+- **Single `/generate` endpoint**: Handles the entire generation loop internally with streaming output
+- **Simplified API**: Only 3 main endpoints (`/generate`, `/stats`, `/health`)
+- **Internal KV cache management**: Automatic prefill, decode, and caching - no manual KV operations needed
+- **Streaming response**: Server-Sent Events (SSE) format for real-time token delivery
 
 ---
 
