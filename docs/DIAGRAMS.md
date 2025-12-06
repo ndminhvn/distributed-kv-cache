@@ -41,46 +41,48 @@ sequenceDiagram
     participant Gateway
     participant Coordinator
     participant Worker
-    participant GPU as GPU (Model)
-    participant Cache as KV Cache
+    participant Model as LLM Model
+    participant Cache as KV Cache<br/>(layer-wise)
 
-    User->>Gateway: POST /generate<br/>{prompt: "Hello", seq_id: "user123"}
+    User->>Gateway: POST /generate<br/>{prompt: "Hello world", seq_id: "user123"}
 
-    Note over Gateway: Step 1: Route to Worker
+    Note over Gateway,Coordinator: Step 1: Route to Worker via Consistent Hashing
     Gateway->>Coordinator: GET /route?seq_id=user123
-    Coordinator->>Coordinator: hash(user123) → Worker #2
-    Coordinator-->>Gateway: {worker_id: "worker-2", address: "..."}
+    Coordinator->>Coordinator: hash(user123) + virtual nodes<br/>→ Worker #2
+    Coordinator-->>Gateway: {worker_id: "worker-2", address: "http://worker-2:8082"}
 
-    Note over Gateway,Worker: Step 2: Initialize Sequence
-    Gateway->>Worker: POST /inference/init<br/>{seq_id: "user123", prompt: "Hello"}
-    Worker->>GPU: Load model if not loaded
-    Worker->>GPU: Tokenize prompt
-    Worker->>GPU: Encode prompt (prefill phase)
-    GPU->>Cache: Store initial KV (all layers, step=0)
-    Worker-->>Gateway: {status: "ready", tokens_so_far: [1234]}
+    Note over Gateway,Worker: Step 2: Send Streaming Generation Request
+    Gateway->>Worker: POST /generate (streaming)<br/>{seq_id: "user123", prompt: "Hello world", max_tokens: 50}
 
-    Note over Gateway,Cache: Step 3: Autoregressive Loop
-    loop For each token (until EOS or max_length)
-        Gateway->>Worker: POST /inference/step<br/>{seq_id: "user123"}
+    Note over Worker,Cache: Step 3: Prefill Phase (process entire prompt)
+    Worker->>Model: Lazy load model if needed
+    Worker->>Model: Tokenize prompt → [token_ids]
+    Worker->>Model: Forward pass (all prompt tokens)
 
-        Worker->>Cache: Get cached KV (all layers, all steps)
-        Cache-->>Worker: {k: [batch,heads,seq_len,dim], v: [...]}
-
-        Worker->>GPU: Forward pass with KV cache<br/>(decode phase - 1 new token)
-        GPU->>GPU: Attention(Q_new, K_cached, V_cached)
-        GPU->>GPU: Generate next token
-        GPU->>Cache: Store new KV step (step += 1)
-
-        Worker-->>Gateway: {token: 5678, finished: false}
-        Gateway-->>User: Stream: "world"
-
-        alt Max length reached or EOS
-            Worker-->>Gateway: {token: <EOS>, finished: true}
-            Gateway-->>User: Stream: [DONE]
-        end
+    loop For each layer (0 to N-1)
+        Model->>Cache: Store KV for layer<br/>Key: (seq_id="user123", layer=i)<br/>Value: {k: [seq_len, heads, dim], v: [seq_len, heads, dim]}
     end
 
-    Note over User: Complete response received
+    Note over Worker,Cache: Step 4: Decode Phase (autoregressive loop)
+    loop Generate tokens until EOS or max_tokens
+        Worker->>Model: Generate next token
+
+        loop For each layer
+            Model->>Cache: Retrieve KV: (seq_id, layer)
+            Cache-->>Model: {k: [seq_len, heads, dim], v: [seq_len, heads, dim]}
+            Model->>Model: Attention(Q_new, K_cached, V_cached)
+            Model->>Cache: Append new token KV<br/>torch.cat([cached_kv, new_kv], dim=seq_len)
+        end
+
+        Model-->>Worker: next_token
+        Worker-->>Gateway: SSE: data: {"token": "Hello", "finished": false}
+        Gateway-->>User: Stream: "Hello"
+    end
+
+    Worker-->>Gateway: SSE: data: {"token": "", "finished": true}
+    Gateway-->>User: Stream: [DONE]
+
+    Note over Cache: Step 5: Cache Persistence<br/>KV cache persists for seq_id="user123"<br/>Future requests reuse cached context
 ```
 
 ---
