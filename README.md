@@ -47,7 +47,7 @@ For a consistent, isolated development environment with all deployment tools pre
    ```
 
 3. **Optional Docker Config if failing to build images from inside the dev container**
-  
+
    ```bash
    sudo chown root:docker /var/run/docker.sock
    ```
@@ -292,9 +292,10 @@ terraform destroy
 
 ## Documentation
 
+- [Technical Report](docs/Distributed_Inference_Key-value_Cache_in_Cloud_Setting.pdf) - Academic paper detailing system design, implementation, and evaluation
+- [Architecture Diagrams](docs/DIAGRAMS.md) - System architecture and design
 - [Deployment Guide](infra/DEPLOYMENT.md) - Complete GKE deployment walkthrough
 - [Test Suite](tests/README.md) - Testing documentation
-- [Architecture Diagrams](docs/) - System architecture and design
 
 ## Contributing
 
