@@ -49,9 +49,10 @@ async def test_distribution_across_workers():
         if num_workers < 2:
             pytest.skip("Need at least 2 workers for distribution test")
 
-        # Route 100 different sequences
+        # Route 5000 different sequences
         worker_assignments = []
-        for i in range(100):
+        num_sequences = 5000
+        for i in range(num_sequences):
             seq_id = f"test-seq-{i}"
             resp = await client.get(f"{COORDINATOR_URL}/kv/route/{seq_id}", timeout=5.0)
             assert resp.status_code == 200
@@ -68,7 +69,7 @@ async def test_distribution_across_workers():
 
         # Check balance (no worker should have >70% of sequences)
         max_sequences = max(distribution.values())
-        max_percentage = (max_sequences / 100) * 100
+        max_percentage = (max_sequences / num_sequences) * 100
         assert (
             max_percentage < 70
         ), f"Unbalanced distribution: one worker has {max_percentage}% of sequences"
